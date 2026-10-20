@@ -202,6 +202,7 @@ wayback-gap-detector/
 ├── waygap.py           # Main script
 ├── test_waygap.py      # Unit tests
 ├── ARCHITECTURE.md     # Architecture notes (function list, data flow)
+├── LICENSE             # AGPL-3.0-or-later
 ├── README.md           # This file (English)
 ├── README_ja.md        # Japanese README
 ├── requirements.txt    # Python dependencies
