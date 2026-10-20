@@ -1,0 +1,24 @@
+# Local work
+notes/
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+env/
+
+# Project outputs (local data, never commit)
+urls.txt
+urls_*.txt
+archived*.txt
+not_archived*.txt
+*.db
+*.db-journal
+*.log
+
+# OS / IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
