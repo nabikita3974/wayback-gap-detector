@@ -86,21 +86,25 @@ CDX_FL = "original"
 # ========================================
 class WaybackGapDetectorError(Exception):
     """Base exception for Wayback Gap Detector"""
+
     pass
 
 
 class CDXAPIError(WaybackGapDetectorError):
     """CDX API related errors (network, response parsing, etc.)"""
+
     pass
 
 
 class InputFileError(WaybackGapDetectorError):
     """Input file related errors (not found, encoding issues, etc.)"""
+
     pass
 
 
 class CacheError(WaybackGapDetectorError):
     """Local cache (SQLite) related errors"""
+
     pass
 
 
@@ -136,13 +140,13 @@ def attemptIPFormats_nodns(host):
         return None
     if host.isdigit():
         # Mask to lower four bytes (same workaround as surt for liveweb arcs).
-        return socket.inet_ntoa(
-            struct.pack('>L', int(host) & 0xffffffff)).encode('ascii')
+        return socket.inet_ntoa(struct.pack(">L", int(host) & 0xFFFFFFFF)).encode(
+            "ascii"
+        )
     if DECIMAL_IP.match(host):
-        parts = host.split(b'.')
+        parts = host.split(b".")
         if len(parts) == 4 and all(
-            p.isdigit() and 0 <= int(p) <= 255
-            and (p == b'0' or not p.startswith(b'0'))
+            p.isdigit() and 0 <= int(p) <= 255 and (p == b"0" or not p.startswith(b"0"))
             for p in parts
         ):
             return host
@@ -170,14 +174,14 @@ def canonicalize_nodns(url, **_ignored):
     if url.host:
         host = unescapeRepeatedly(url.host)
         try:
-            host.decode('ascii')
+            host.decode("ascii")
         except UnicodeDecodeError:
             try:
-                host = host.decode('utf-8', 'ignore').encode('idna')
+                host = host.decode("utf-8", "ignore").encode("idna")
             except ValueError:
                 pass
 
-        host = host.replace(b'..', b'.').strip(b'.')
+        host = host.replace(b"..", b".").strip(b".")
 
         ip = attemptIPFormats_nodns(host)
         if ip:
@@ -211,9 +215,9 @@ def build_key_opts(ignore_protocol: bool, ignore_www: bool) -> Dict[str, Any]:
     """
     opts: Dict[str, Any] = {}
     if not ignore_www:
-        opts['host_massage'] = False
+        opts["host_massage"] = False
     if not ignore_protocol:
-        opts['with_scheme'] = True
+        opts["with_scheme"] = True
     return opts
 
 
@@ -224,7 +228,7 @@ def key_profile(opts: Dict[str, Any]) -> str:
     return "surt:" + ",".join(f"{k}={opts[k]}" for k in sorted(opts))
 
 
-_SCHEME_RE = re.compile(r'\A([a-zA-Z][a-zA-Z0-9+.\-]*):')
+_SCHEME_RE = re.compile(r"\A([a-zA-Z][a-zA-Z0-9+.\-]*):")
 
 
 def normalize_key(url: str, key_opts: Optional[Dict[str, Any]] = None) -> str:
@@ -238,7 +242,7 @@ def normalize_key(url: str, key_opts: Optional[Dict[str, Any]] = None) -> str:
     text = (url or "").strip()
     if not text:
         return "-"
-    if opts.get('with_scheme'):
+    if opts.get("with_scheme"):
         # surt reproduces the input scheme verbatim; lower it so that
         # scheme-preserving (strict) matching does not depend on how the
         # scheme was spelled in the input file or in the CDX data.
@@ -246,7 +250,7 @@ def normalize_key(url: str, key_opts: Optional[Dict[str, Any]] = None) -> str:
         if m:
             # m.group(0) spans "scheme:"; lower it while keeping the colon
             # and everything after it intact.
-            text = m.group(0).lower() + text[m.end():]
+            text = m.group(0).lower() + text[m.end() :]
     return surt(text, canonicalizer=KEY_CANONICALIZER, **opts)
 
 
@@ -283,14 +287,11 @@ def open_db(path: str) -> sqlite3.Connection:
         # WITHOUT ROWID keeps this to a single B-tree (no separate rowid
         # table + PK index).
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS archived("
-            "key TEXT PRIMARY KEY) WITHOUT ROWID;"
+            "CREATE TABLE IF NOT EXISTS archived(key TEXT PRIMARY KEY) WITHOUT ROWID;"
         )
         # pages_done: integer PK uses the rowid alias, which is the most
         # compact/fastest option for integers (deliberately NOT WITHOUT ROWID).
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS pages_done(page INTEGER PRIMARY KEY);"
-        )
+        conn.execute("CREATE TABLE IF NOT EXISTS pages_done(page INTEGER PRIMARY KEY);")
         conn.commit()
     except Exception:
         conn.close()
@@ -306,8 +307,9 @@ def archived_columns(conn: sqlite3.Connection) -> Set[str]:
         return set()
 
 
-def expected_meta(target_url: str, key_opts: Dict[str, Any],
-                  page_size: Optional[int]) -> Dict[str, str]:
+def expected_meta(
+    target_url: str, key_opts: Dict[str, Any], page_size: Optional[int]
+) -> Dict[str, str]:
     """Build parameters that define cache identity."""
     return {
         "schema_v": DB_SCHEMA_VERSION,
@@ -390,7 +392,7 @@ def batch_lookup_found(conn: sqlite3.Connection, keys: List[str]) -> Set[str]:
     """Return the subset of surt `keys` present in the archived table."""
     found: Set[str] = set()
     for i in range(0, len(keys), 999):
-        chunk = keys[i:i + 999]
+        chunk = keys[i : i + 999]
         placeholders = ",".join("?" * len(chunk))
         rows = conn.execute(
             f"SELECT key FROM archived WHERE key IN ({placeholders});", chunk
@@ -443,29 +445,40 @@ def _split_resume_key(data: List) -> Tuple[List, Optional[str]]:
 
 def _strip_header(data: List) -> List:
     if data and isinstance(data[0], list) and data[0]:
-        if data[0][0] in ('urlkey', 'original'):
+        if data[0][0] in ("urlkey", "original"):
             return data[1:]
     return data
 
 
-def _get_with_retries(session: requests.Session, api_url: str, params: dict,
-                      headers: dict, timeout: int = 60) -> requests.Response:
+def _get_with_retries(
+    session: requests.Session,
+    api_url: str,
+    params: dict,
+    headers: dict,
+    timeout: int = 60,
+) -> requests.Response:
     """GET with retries for transport errors and non-JSON/empty 200 responses."""
     last_error: Optional[Exception] = None
     for attempt in range(3):
         try:
-            response = session.get(api_url, params=params, headers=headers, timeout=timeout)
+            response = session.get(
+                api_url, params=params, headers=headers, timeout=timeout
+            )
             response.raise_for_status()
-            content_type = response.headers.get('Content-Type', '')
+            content_type = response.headers.get("Content-Type", "")
             body = response.content
-            if len(body) == 0 or not response.text.strip() or 'application/json' not in content_type:
+            if (
+                len(body) == 0
+                or not response.text.strip()
+                or "application/json" not in content_type
+            ):
                 logger.warning(
                     f"Non-JSON or empty response (attempt {attempt + 1}/3): "
                     f"status={response.status_code}, Content-Type={content_type}, "
                     f"content-length={len(body)}"
                 )
                 if attempt < 2:
-                    time.sleep(2 ** attempt)
+                    time.sleep(2**attempt)
                     continue
                 raise CDXAPIError("Non-JSON or empty response (max retries reached)")
             return response
@@ -475,14 +488,20 @@ def _get_with_retries(session: requests.Session, api_url: str, params: dict,
             last_error = e
             logger.warning(f"Request error (attempt {attempt + 1}/3): {e}")
             if attempt < 2:
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
                 continue
-    raise CDXAPIError(f"CDX API fetch error (max retries reached): {last_error}") from last_error
+    raise CDXAPIError(
+        f"CDX API fetch error (max retries reached): {last_error}"
+    ) from last_error
 
 
-def get_num_pages(target_url: str, page_size: Optional[int],
-                  collapse: Optional[str], session: requests.Session,
-                  headers: dict) -> Optional[int]:
+def get_num_pages(
+    target_url: str,
+    page_size: Optional[int],
+    collapse: Optional[str],
+    session: requests.Session,
+    headers: dict,
+) -> Optional[int]:
     """Ask the CDX server for the page count. Returns None if unsupported.
 
     Sends the same pageSize/collapse as the paged queries: the page count
@@ -492,14 +511,14 @@ def get_num_pages(target_url: str, page_size: Optional[int],
     """
     api_url = "https://web.archive.org/cdx/search/cdx"
     params = {
-        'url': target_url,
-        'filter': CDX_FILTER,
-        'showNumPages': 'true',
+        "url": target_url,
+        "filter": CDX_FILTER,
+        "showNumPages": "true",
     }
     if page_size is not None:
-        params['pageSize'] = page_size
+        params["pageSize"] = page_size
     if collapse:
-        params['collapse'] = collapse
+        params["collapse"] = collapse
     try:
         response = session.get(api_url, params=params, headers=headers, timeout=60)
         response.raise_for_status()
@@ -515,41 +534,49 @@ def get_num_pages(target_url: str, page_size: Optional[int],
         return None
 
 
-def _cdx_params(target_url: str, *,
-                page: Optional[int] = None,
-                page_size: Optional[int] = None,
-                resume_key: Optional[str] = None,
-                limit: Optional[int] = None,
-                collapse: Optional[str] = None) -> Dict[str, Any]:
+def _cdx_params(
+    target_url: str,
+    *,
+    page: Optional[int] = None,
+    page_size: Optional[int] = None,
+    resume_key: Optional[str] = None,
+    limit: Optional[int] = None,
+    collapse: Optional[str] = None,
+) -> Dict[str, Any]:
     """CDX request parameters shared by both fetch paths.
 
     `collapse` carries the run's collapse mode: `urlkey` for lenient,
     `original` for strict. Callers may pass None to omit the parameter.
     """
     params: Dict[str, Any] = {
-        'url': target_url,
-        'output': 'json',
-        'filter': CDX_FILTER,
-        'fl': CDX_FL,
-        'showResumeKey': 'true',
+        "url": target_url,
+        "output": "json",
+        "filter": CDX_FILTER,
+        "fl": CDX_FL,
+        "showResumeKey": "true",
     }
     if page is not None:
-        params['page'] = page
+        params["page"] = page
     if page_size is not None:
-        params['pageSize'] = page_size
+        params["pageSize"] = page_size
     # Omit `limit` when unset so the CDX server applies its own default.
     if limit is not None:
-        params['limit'] = limit
+        params["limit"] = limit
     if collapse:
-        params['collapse'] = collapse
+        params["collapse"] = collapse
     if resume_key:
-        params['resumeKey'] = resume_key
+        params["resumeKey"] = resume_key
     return params
 
 
-def fetch_page_rows(target_url: str, page: int, page_size: Optional[int],
-                    collapse: Optional[str], session: requests.Session,
-                    headers: dict) -> List[List]:
+def fetch_page_rows(
+    target_url: str,
+    page: int,
+    page_size: Optional[int],
+    collapse: Optional[str],
+    session: requests.Session,
+    headers: dict,
+) -> List[List]:
     """Fetch one page (following in-page resumeKey chaining). Returns data rows.
 
     NOTE: `limit` is intentionally NOT sent here. In pagination mode the
@@ -560,8 +587,7 @@ def fetch_page_rows(target_url: str, page: int, page_size: Optional[int],
     resumeKey, so the normal case costs nothing.
     """
     api_url = "https://web.archive.org/cdx/search/cdx"
-    params = _cdx_params(target_url, page=page, page_size=page_size,
-                         collapse=collapse)
+    params = _cdx_params(target_url, page=page, page_size=page_size, collapse=collapse)
 
     rows: List[List] = []
     resume_key: Optional[str] = None
@@ -575,11 +601,13 @@ def fetch_page_rows(target_url: str, page: int, page_size: Optional[int],
                 logger.warning(f"resumeKey cycle detected within page {page}, stopping")
                 break
             seen_keys.add(resume_key)
-            params['resumeKey'] = resume_key
+            params["resumeKey"] = resume_key
         response = _get_with_retries(session, api_url, params, headers)
         data = response.json()
         if not isinstance(data, list):
-            raise CDXAPIError(f"CDX API returned unexpected type: {type(data).__name__}")
+            raise CDXAPIError(
+                f"CDX API returned unexpected type: {type(data).__name__}"
+            )
         data = [row for row in data if row != []]
         data, new_key = _split_resume_key(data)
         data = _strip_header(data)
@@ -591,10 +619,14 @@ def fetch_page_rows(target_url: str, page: int, page_size: Optional[int],
     return rows
 
 
-def fetch_resumekey_rows(target_url: str, initial_resume_key: Optional[str],
-                         limit: Optional[int], collapse: Optional[str],
-                         session: requests.Session,
-                         headers: dict) -> Generator[List, None, Optional[str]]:
+def fetch_resumekey_rows(
+    target_url: str,
+    initial_resume_key: Optional[str],
+    limit: Optional[int],
+    collapse: Optional[str],
+    session: requests.Session,
+    headers: dict,
+) -> Generator[List, None, Optional[str]]:
     """Sequential resumeKey fetch (fallback path). Yields data rows.
 
     Returns the last resumeKey via the generator return value (PEP 380),
@@ -614,7 +646,7 @@ def fetch_resumekey_rows(target_url: str, initial_resume_key: Optional[str],
                 logger.warning(f"resumeKey cycle detected (request side): {resume_key}")
                 break
             seen_request_keys.add(resume_key)
-            params['resumeKey'] = resume_key
+            params["resumeKey"] = resume_key
 
         try:
             response = _get_with_retries(session, api_url, params, headers, timeout=60)
@@ -626,12 +658,16 @@ def fetch_resumekey_rows(target_url: str, initial_resume_key: Optional[str],
             raise CDXAPIError(f"CDX API fetch error: {e}") from e
 
         if not isinstance(data, list):
-            raise CDXAPIError(f"CDX API returned unexpected type: {type(data).__name__}")
+            raise CDXAPIError(
+                f"CDX API returned unexpected type: {type(data).__name__}"
+            )
 
         data = [row for row in data if row != []]
         data, new_key = _split_resume_key(data)
         if new_key and new_key in seen_response_keys:
-            logger.warning(f"Previously seen resumeKey returned again: {new_key} -> stopping")
+            logger.warning(
+                f"Previously seen resumeKey returned again: {new_key} -> stopping"
+            )
             break
         if new_key:
             seen_response_keys.add(new_key)
@@ -652,8 +688,9 @@ def fetch_resumekey_rows(target_url: str, initial_resume_key: Optional[str],
     return resume_key
 
 
-def _rows_to_keys(rows: Iterable[List],
-                  key_opts: Optional[Dict[str, Any]]) -> List[str]:
+def _rows_to_keys(
+    rows: Iterable[List], key_opts: Optional[Dict[str, Any]]
+) -> List[str]:
     """Convert CDX data rows (fl=original) into surt keys.
 
     Original spellings are intentionally not returned (and not stored):
@@ -670,11 +707,15 @@ def _rows_to_keys(rows: Iterable[List],
     return out
 
 
-def _fetch_pages_parallel(target_url: str, pages: List[int], page_size: Optional[int],
-                          key_opts: Optional[Dict[str, Any]],
-                          workers: int, headers: dict,
-                          collapse: Optional[str]) -> Generator[
-        Tuple[int, List[str]], None, None]:
+def _fetch_pages_parallel(
+    target_url: str,
+    pages: List[int],
+    page_size: Optional[int],
+    key_opts: Optional[Dict[str, Any]],
+    workers: int,
+    headers: dict,
+    collapse: Optional[str],
+) -> Generator[Tuple[int, List[str]], None, None]:
     """Fetch pages concurrently; yields (page, surt_keys) as they complete."""
     thread_state = threading.local()
 
@@ -696,13 +737,16 @@ def _fetch_pages_parallel(target_url: str, pages: List[int], page_size: Optional
             yield fut.result()
 
 
-def ensure_archived_db(target_url: str, cache_file: str,
-                       key_opts: Optional[Dict[str, Any]] = None,
-                       initial_resume_key: Optional[str] = None,
-                       limit: Optional[int] = None,
-                       page_size: Optional[int] = None,
-                       workers: int = 4,
-                       refresh: bool = False) -> str:
+def ensure_archived_db(
+    target_url: str,
+    cache_file: str,
+    key_opts: Optional[Dict[str, Any]] = None,
+    initial_resume_key: Optional[str] = None,
+    limit: Optional[int] = None,
+    page_size: Optional[int] = None,
+    workers: int = 4,
+    refresh: bool = False,
+) -> str:
     """Build (or reuse/resume) the SQLite archived-URL cache. Returns db path.
 
     Lenient mode (empty key_opts == surt defaults) adds collapse=urlkey to
@@ -710,7 +754,7 @@ def ensure_archived_db(target_url: str, cache_file: str,
     collapse=original, which only folds repeated captures of identical
     original spellings. The key profile is part of the cache identity.
     """
-    headers = {'User-Agent': USER_AGENT}
+    headers = {"User-Agent": USER_AGENT}
     collapse = CDX_COLLAPSE if not key_opts else CDX_COLLAPSE_STRICT
     logger.info(f"URL key profile: {key_profile(key_opts or {})}")
 
@@ -726,7 +770,9 @@ def ensure_archived_db(target_url: str, cache_file: str,
         params_match = columns_ok and all(meta.get(k) == v for k, v in expected.items())
 
         if initial_resume_key is None and params_match and is_completed(conn):
-            logger.info(f"Reusing completed cache: {cache_file} ({count_archived(conn)} URLs)")
+            logger.info(
+                f"Reusing completed cache: {cache_file} ({count_archived(conn)} URLs)"
+            )
             return cache_file
 
         if not params_match and (meta or not columns_ok):
@@ -749,8 +795,9 @@ def ensure_archived_db(target_url: str, cache_file: str,
         if initial_resume_key is not None:
             logger.info(f"Fetching data from CDX API (resumeKey mode): {target_url}")
             session = make_session()
-            gen = fetch_resumekey_rows(target_url, initial_resume_key, limit,
-                                       collapse, session, headers)
+            gen = fetch_resumekey_rows(
+                target_url, initial_resume_key, limit, collapse, session, headers
+            )
             inserted = 0
             batch: List[str] = []
             with tqdm(desc="Fetching (resumeKey)", unit="rec") as bar:
@@ -777,7 +824,9 @@ def ensure_archived_db(target_url: str, cache_file: str,
                         inserted += len(batch)
                         bar.update(len(batch))
                 except CDXAPIError:
-                    logger.error(f"Progress saved ({inserted} records). Resume with --resume-key.")
+                    logger.error(
+                        f"Progress saved ({inserted} records). Resume with --resume-key."
+                    )
                     raise
             set_completed(conn, True)
             write_meta(conn, {"mode": "resumekey"})
@@ -791,7 +840,9 @@ def ensure_archived_db(target_url: str, cache_file: str,
         num_pages = get_num_pages(target_url, page_size, collapse, session, headers)
         if num_pages is None or num_pages <= 0:
             logger.info("Falling back to resumeKey sequential fetch")
-            gen = fetch_resumekey_rows(target_url, None, limit, collapse, session, headers)
+            gen = fetch_resumekey_rows(
+                target_url, None, limit, collapse, session, headers
+            )
             inserted = 0
             batch = []
             with tqdm(desc="Fetching (resumeKey)", unit="rec") as bar:
@@ -817,12 +868,20 @@ def ensure_archived_db(target_url: str, cache_file: str,
 
         done = get_done_pages(conn)
         pending = [p for p in range(num_pages) if p not in done]
-        logger.info(f"Fetching data from CDX API: {target_url} ({num_pages} pages, {len(pending)} pending)")
+        logger.info(
+            f"Fetching data from CDX API: {target_url} ({num_pages} pages, {len(pending)} pending)"
+        )
         write_meta(conn, {"mode": "pagination", "num_pages": str(num_pages)})
         total_inserted = 0
         with tqdm(total=len(pending), desc="Fetching pages", unit="page") as bar:
             for page, keys in _fetch_pages_parallel(
-                target_url, pending, page_size, key_opts, workers, headers, collapse,
+                target_url,
+                pending,
+                page_size,
+                key_opts,
+                workers,
+                headers,
+                collapse,
             ):
                 if keys:
                     insert_urls(conn, keys)
@@ -832,14 +891,17 @@ def ensure_archived_db(target_url: str, cache_file: str,
                 bar.set_postfix(records=count_archived(conn))
         set_completed(conn, True)
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
-        logger.info(f"All pages fetched successfully ({count_archived(conn)} unique URLs)")
+        logger.info(
+            f"All pages fetched successfully ({count_archived(conn)} unique URLs)"
+        )
         return cache_file
     finally:
         conn.close()
 
 
-def extract_archived_urls(cdx_data: Iterable[List],
-                          key_opts: Optional[Dict[str, Any]] = None) -> Set[str]:
+def extract_archived_urls(
+    cdx_data: Iterable[List], key_opts: Optional[Dict[str, Any]] = None
+) -> Set[str]:
     """
     Extract a set of surt keys from CDX data.
 
@@ -882,13 +944,14 @@ def extract_archived_urls(cdx_data: Iterable[List],
         if not header_processed:
             header_processed = True
             lowered = [c.lower() for c in row if isinstance(c, str)]
-            if 'original' in lowered:
+            if "original" in lowered:
                 col_idx = next(
-                    i for i, c in enumerate(row)
-                    if isinstance(c, str) and c.lower() == 'original'
+                    i
+                    for i, c in enumerate(row)
+                    if isinstance(c, str) and c.lower() == "original"
                 )
                 continue  # skip the header row itself
-            if any(h in lowered for h in ('urlkey', 'url', 'timestamp')):
+            if any(h in lowered for h in ("urlkey", "url", "timestamp")):
                 col_idx = 0
                 continue  # header without an 'original' column; data starts at index 0
             # No recognizable header: treat this row as data (fall through).
@@ -907,9 +970,12 @@ def extract_archived_urls(cdx_data: Iterable[List],
 # ========================================
 # Main logic
 # ========================================
-def detect_not_archived(input_file: str, archived_keys: Set[str],
-                        key_opts: Optional[Dict[str, Any]] = None,
-                        collect_archived: bool = False) -> Tuple[List[str], Optional[List[str]], int]:
+def detect_not_archived(
+    input_file: str,
+    archived_keys: Set[str],
+    key_opts: Optional[Dict[str, Any]] = None,
+    collect_archived: bool = False,
+) -> Tuple[List[str], Optional[List[str]], int]:
     """
     Detect URLs in the input file that have not been archived (in-memory set version).
 
@@ -933,7 +999,7 @@ def detect_not_archived(input_file: str, archived_keys: Set[str],
     archived = [] if collect_archived else None
     total_count = 0
 
-    with open(input_file, 'r', encoding='utf-8') as f:
+    with open(input_file, "r", encoding="utf-8") as f:
         for line in f:
             original_url = line.strip()
 
@@ -956,22 +1022,25 @@ def count_input_lines(input_file: str) -> Optional[int]:
     """Fast line count for progress bars. Returns None on failure."""
     try:
         count = 0
-        with open(input_file, 'rb') as f:
+        with open(input_file, "rb") as f:
             while True:
                 chunk = f.read(1024 * 1024)
                 if not chunk:
                     break
-                count += chunk.count(b'\n')
+                count += chunk.count(b"\n")
         return count
     except OSError:
         return None
 
 
-def scan_input_against_db(input_file: str, db_path: str,
-                          key_opts: Optional[Dict[str, Any]] = None,
-                          output_file: Optional[str] = None,
-                          output_archived: Optional[str] = None,
-                          batch_size: int = LOOKUP_BATCH_SIZE) -> Tuple[int, int, int]:
+def scan_input_against_db(
+    input_file: str,
+    db_path: str,
+    key_opts: Optional[Dict[str, Any]] = None,
+    output_file: Optional[str] = None,
+    output_archived: Optional[str] = None,
+    batch_size: int = LOOKUP_BATCH_SIZE,
+) -> Tuple[int, int, int]:
     """Stream the input file against SQLite and write results incrementally.
 
     Never accumulates URL lists in RAM: results go straight to disk.
@@ -994,10 +1063,10 @@ def scan_input_against_db(input_file: str, db_path: str,
         try:
             if output_file:
                 Path(output_file).parent.mkdir(parents=True, exist_ok=True)
-                out_f = open(output_file, 'w', encoding='utf-8')
+                out_f = open(output_file, "w", encoding="utf-8")
             if output_archived:
                 Path(output_archived).parent.mkdir(parents=True, exist_ok=True)
-                arch_f = open(output_archived, 'w', encoding='utf-8')
+                arch_f = open(output_archived, "w", encoding="utf-8")
 
             total_count = 0
             not_count = 0
@@ -1014,14 +1083,14 @@ def scan_input_against_db(input_file: str, db_path: str,
                     if key in found:
                         arch_count += 1
                         if arch_f is not None:
-                            arch_f.write(original + '\n')
+                            arch_f.write(original + "\n")
                     else:
                         not_count += 1
                         if out_f is not None:
-                            out_f.write(original + '\n')
+                            out_f.write(original + "\n")
                 batch.clear()
 
-            with open(input_file, 'r', encoding='utf-8') as f:
+            with open(input_file, "r", encoding="utf-8") as f:
                 with tqdm(total=total_lines, desc="Checking URLs", unit="url") as bar:
                     for line in f:
                         original_url = line.strip()
@@ -1048,149 +1117,147 @@ def scan_input_against_db(input_file: str, db_path: str,
 def main() -> int:
     """Entry point for the CLI."""
     parser = argparse.ArgumentParser(
-        description='Wayback Gap Detector - Find URLs that have not been archived',
+        description="Wayback Gap Detector - Find URLs that have not been archived",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog='''
+        epilog="""
 examples:
   python waygap.py "https://example.com/blog/*"
   python waygap.py "https://example.com/blog/*" --no-ignore-www --output result.txt
-        '''
+        """,
     )
 
     parser.add_argument(
-        'target_url',
-        help='Wildcard URL to search in the CDX API (e.g. https://example.com/path/*)'
+        "target_url",
+        help="Wildcard URL to search in the CDX API (e.g. https://example.com/path/*)",
     )
 
     parser.add_argument(
-        '--ignore-protocol',
-        dest='ignore_protocol',
-        action='store_true',
+        "--ignore-protocol",
+        dest="ignore_protocol",
+        action="store_true",
         default=IGNORE_PROTOCOL,
-        help='treat http and https as equivalent (default: enabled)'
+        help="treat http and https as equivalent (default: enabled)",
     )
     parser.add_argument(
-        '--no-ignore-protocol',
-        dest='ignore_protocol',
-        action='store_false',
-        help='distinguish between http and https'
+        "--no-ignore-protocol",
+        dest="ignore_protocol",
+        action="store_false",
+        help="distinguish between http and https",
     )
     parser.add_argument(
-        '--ignore-www',
-        dest='ignore_www',
-        action='store_true',
+        "--ignore-www",
+        dest="ignore_www",
+        action="store_true",
         default=IGNORE_WWW,
-        help='treat www.example.com / www2.example.com etc. as equivalent '
-             '(default: enabled, matches CDX urlkey normalization)'
+        help="treat www.example.com / www2.example.com etc. as equivalent "
+        "(default: enabled, matches CDX urlkey normalization)",
     )
     parser.add_argument(
-        '--no-ignore-www',
-        dest='ignore_www',
-        action='store_false',
-        help='distinguish www.example.com and example.com (strict key matching)'
+        "--no-ignore-www",
+        dest="ignore_www",
+        action="store_false",
+        help="distinguish www.example.com and example.com (strict key matching)",
     )
 
     parser.add_argument(
-        '--input',
-        dest='input_file',
+        "--input",
+        dest="input_file",
         default=TARGET_URL_FILE,
-        help=f'path to the input URL file (default: {TARGET_URL_FILE})'
+        help=f"path to the input URL file (default: {TARGET_URL_FILE})",
     )
 
     parser.add_argument(
-        '--output',
-        dest='output_file',
+        "--output",
+        dest="output_file",
         default=OUTPUT_FILE,
-        help=f'path to the output file (default: {OUTPUT_FILE})'
+        help=f"path to the output file (default: {OUTPUT_FILE})",
     )
 
     parser.add_argument(
-        '--cache',
-        dest='cache_file',
+        "--cache",
+        dest="cache_file",
         default=CACHE_FILE,
-        help=f'path to the CDX cache file (default: {CACHE_FILE})'
+        help=f"path to the CDX cache file (default: {CACHE_FILE})",
     )
     parser.add_argument(
-        '--refresh',
-        dest='refresh',
-        action='store_true',
+        "--refresh",
+        dest="refresh",
+        action="store_true",
         default=False,
-        help='ignore and rebuild the existing cache file'
+        help="ignore and rebuild the existing cache file",
     )
     parser.add_argument(
-        '--no-cache',
-        dest='no_cache',
-        action='store_true',
+        "--no-cache",
+        dest="no_cache",
+        action="store_true",
         default=False,
-        help='do not reuse or keep the cache (uses a temporary database)'
+        help="do not reuse or keep the cache (uses a temporary database)",
     )
 
     parser.add_argument(
-        '--output-archived',
-        dest='output_archived',
-        nargs='?',
+        "--output-archived",
+        dest="output_archived",
+        nargs="?",
         const=ARCHIVED_FILE,
         default=None,
-        help=f'path to write archived URLs to (default: {ARCHIVED_FILE})'
+        help=f"path to write archived URLs to (default: {ARCHIVED_FILE})",
     )
 
     parser.add_argument(
-        '--resume-key',
-        dest='resume_key',
+        "--resume-key",
+        dest="resume_key",
         default=None,
-        help='resumeKey to resume an interrupted fetch (use the key logged at failure time)'
+        help="resumeKey to resume an interrupted fetch (use the key logged at failure time)",
     )
 
     parser.add_argument(
-        '--limit',
-        dest='limit',
+        "--limit",
+        dest="limit",
         type=int,
         default=None,
-        help='chunk size per request for resumeKey sequential fetch only '
-             '(pagination mode ignores it; default: server default)'
+        help="chunk size per request for resumeKey sequential fetch only "
+        "(pagination mode ignores it; default: server default)",
     )
     parser.add_argument(
-        '--page-size',
-        dest='page_size',
+        "--page-size",
+        dest="page_size",
         type=int,
         default=None,
-        help='CDX pagination page size (default: server default)'
+        help="CDX pagination page size (default: server default)",
     )
     parser.add_argument(
-        '--workers',
-        dest='workers',
+        "--workers",
+        dest="workers",
         type=int,
         default=4,
-        help='parallel page fetch workers (default: 4)'
+        help="parallel page fetch workers (default: 4)",
     )
     parser.add_argument(
-        '--batch-size',
-        dest='batch_size',
+        "--batch-size",
+        dest="batch_size",
         type=int,
         default=LOOKUP_BATCH_SIZE,
-        help=f'URL lookup batch size for DB scan (default: {LOOKUP_BATCH_SIZE})'
+        help=f"URL lookup batch size for DB scan (default: {LOOKUP_BATCH_SIZE})",
     )
 
     parser.add_argument(
-        '--version',
-        action='version',
-        version=f'%(prog)s {__version__}',
-        help="show the program's version number and exit"
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+        help="show the program's version number and exit",
     )
     parser.add_argument(
-        '-v', '--verbose',
-        action='store_true',
-        help='enable verbose (DEBUG-level) logging'
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="enable verbose (DEBUG-level) logging",
     )
 
     args = parser.parse_args()
 
     # Configure logging
     log_level = logging.DEBUG if args.verbose else logging.INFO
-    logging.basicConfig(
-        level=log_level,
-        format='%(levelname)s: %(message)s'
-    )
+    logging.basicConfig(level=log_level, format="%(levelname)s: %(message)s")
 
     temp_db: Optional[str] = None
     try:
@@ -1235,7 +1302,9 @@ examples:
         logger.info(f"Results written to {args.output_file}")
 
         if args.output_archived:
-            logger.info(f"Archived URLs written to {args.output_archived}: {arch_count} entries")
+            logger.info(
+                f"Archived URLs written to {args.output_archived}: {arch_count} entries"
+            )
 
         return 0
 
@@ -1259,5 +1328,5 @@ examples:
                 pass
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())
