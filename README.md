@@ -179,6 +179,31 @@ rebuilt automatically, without user action.
 
 ---
 
+## Development setup
+
+This project uses [uv](https://docs.astral.sh/uv/) for development. After installing uv, the following commands create a virtual environment (`.venv`) and install all dependencies. If the required Python version is not installed, uv downloads it automatically.
+
+```bash
+git clone https://github.com/nabikita3974/wayback-gap-detector.git
+cd wayback-gap-detector
+uv sync
+```
+
+Run commands with `uv run`; there is no need to activate the virtual environment:
+
+```bash
+uv run python waygap.py "https://example.com/blog/*" --input urls.txt
+uv run python -m unittest discover -v
+```
+
+To add or update a dependency, use `uv add <package>`, then regenerate `requirements.txt`:
+
+```bash
+uv export --no-dev --no-hashes --no-emit-project -o requirements.txt
+```
+
+---
+
 ## Running the tests
 
 ```bash
@@ -205,6 +230,10 @@ wayback-gap-detector/
 ├── LICENSE             # AGPL-3.0-or-later
 ├── README.md           # This file (English)
 ├── README_ja.md        # Japanese README
+├── pyproject.toml      # Project metadata and dependencies
+├── uv.lock             # Lock file (managed by uv)
+├── .python-version     # Python version used for development
+├── requirements.txt    # Python dependencies (generated from pyproject.toml)
 ├── requirements.txt    # Python dependencies
 ├── .github/workflows/tests.yml  # CI (unit tests)
 └── .gitignore          # Git ignore rules
@@ -218,8 +247,9 @@ Contributions are welcome!
 
 1. Fork the repository and create a feature branch.
 2. Make your changes and add or update tests as appropriate.
-3. Ensure all tests pass: `python -m unittest discover -v`
-4. Open a pull request with a clear description of what changed and why.
+3. If you change dependencies, update `pyproject.toml`, `uv.lock` and `requirements.txt` together (see "Development setup").
+4. Ensure all tests pass: `python -m unittest discover -v`
+5. Open a pull request with a clear description of what changed and why.
 
 Please keep pull requests focused — one logical change per PR.
 
