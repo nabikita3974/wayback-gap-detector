@@ -27,7 +27,7 @@ import threading
 import time
 from collections.abc import Generator, Iterable
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Optional
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -203,7 +203,7 @@ def canonicalize_nodns(url, **_ignored):
 KEY_CANONICALIZER = CompositeCanonicalizer([canonicalize_nodns, ia_canonicalize])
 
 
-def build_key_opts(ignore_protocol: bool, ignore_www: bool) -> Dict[str, Any]:
+def build_key_opts(ignore_protocol: bool, ignore_www: bool) -> dict[str, Any]:
     """Build the surt() options for one run.
 
     With both defaults (True/True) this is empty == surt defaults ==
@@ -212,7 +212,7 @@ def build_key_opts(ignore_protocol: bool, ignore_www: bool) -> Dict[str, Any]:
     key (with_scheme=True). Any non-empty opts activates strict mode
     (collapse=original instead of urlkey).
     """
-    opts: Dict[str, Any] = {}
+    opts: dict[str, Any] = {}
     if not ignore_www:
         opts["host_massage"] = False
     if not ignore_protocol:
@@ -220,7 +220,7 @@ def build_key_opts(ignore_protocol: bool, ignore_www: bool) -> Dict[str, Any]:
     return opts
 
 
-def key_profile(opts: Dict[str, Any]) -> str:
+def key_profile(opts: dict[str, Any]) -> str:
     """Stable fingerprint of key options for cache identity."""
     if not opts:
         return "surt-default"
@@ -230,7 +230,7 @@ def key_profile(opts: Dict[str, Any]) -> str:
 _SCHEME_RE = re.compile(r"\A([a-zA-Z][a-zA-Z0-9+.\-]*):")
 
 
-def normalize_key(url: str, key_opts: Optional[Dict[str, Any]] = None) -> str:
+def normalize_key(url: str, key_opts: Optional[dict[str, Any]] = None) -> str:
     """Produce the CDX-comparable surt key for a URL.
 
     A deterministic, stable key (inverted host + canonicalized path/query).
@@ -298,7 +298,7 @@ def open_db(path: str) -> sqlite3.Connection:
     return conn
 
 
-def archived_columns(conn: sqlite3.Connection) -> Set[str]:
+def archived_columns(conn: sqlite3.Connection) -> set[str]:
     """Column names of the archived table (empty set when it does not exist)."""
     try:
         return {r[1] for r in conn.execute("PRAGMA table_info(archived);")}
@@ -307,8 +307,8 @@ def archived_columns(conn: sqlite3.Connection) -> Set[str]:
 
 
 def expected_meta(
-    target_url: str, key_opts: Dict[str, Any], page_size: Optional[int]
-) -> Dict[str, str]:
+    target_url: str, key_opts: dict[str, Any], page_size: Optional[int]
+) -> dict[str, str]:
     """Build parameters that define cache identity."""
     return {
         "schema_v": DB_SCHEMA_VERSION,
@@ -320,14 +320,14 @@ def expected_meta(
     }
 
 
-def read_meta(conn: sqlite3.Connection) -> Dict[str, str]:
+def read_meta(conn: sqlite3.Connection) -> dict[str, str]:
     try:
         return {k: v for k, v in conn.execute("SELECT k, v FROM meta;")}
     except sqlite3.Error:
         return {}
 
 
-def write_meta(conn: sqlite3.Connection, values: Dict[str, str]) -> None:
+def write_meta(conn: sqlite3.Connection, values: dict[str, str]) -> None:
     with conn:
         conn.executemany(
             "INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?);", list(values.items())
@@ -347,7 +347,7 @@ def set_completed(conn: sqlite3.Connection, done: bool = True) -> None:
         )
 
 
-def get_done_pages(conn: sqlite3.Connection) -> Set[int]:
+def get_done_pages(conn: sqlite3.Connection) -> set[int]:
     try:
         return {r[0] for r in conn.execute("SELECT page FROM pages_done;")}
     except sqlite3.Error:
@@ -361,7 +361,7 @@ def mark_page_done(conn: sqlite3.Connection, page: int) -> None:
 
 def insert_urls(conn: sqlite3.Connection, keys: Iterable[str]) -> int:
     """Bulk-insert surt keys (deduplicated by PK). Returns rows attempted."""
-    batch: List[Tuple[str]] = []
+    batch: list[tuple[str]] = []
     total = 0
     with conn:
         for k in keys:
@@ -387,9 +387,9 @@ def count_archived(conn: sqlite3.Connection) -> int:
     return int(row[0]) if row else 0
 
 
-def batch_lookup_found(conn: sqlite3.Connection, keys: List[str]) -> Set[str]:
+def batch_lookup_found(conn: sqlite3.Connection, keys: list[str]) -> set[str]:
     """Return the subset of surt `keys` present in the archived table."""
-    found: Set[str] = set()
+    found: set[str] = set()
     for i in range(0, len(keys), 999):
         chunk = keys[i : i + 999]
         placeholders = ",".join("?" * len(chunk))
@@ -418,7 +418,7 @@ def make_session() -> requests.Session:
     return session
 
 
-def _split_resume_key(data: List) -> Tuple[List, Optional[str]]:
+def _split_resume_key(data: list) -> tuple[list, Optional[str]]:
     """Split a trailing resumeKey off a CDX JSON response.
 
     Robust against fl=original (single-column data rows): a trailing
@@ -442,7 +442,7 @@ def _split_resume_key(data: List) -> Tuple[List, Optional[str]]:
     return data, None
 
 
-def _strip_header(data: List) -> List:
+def _strip_header(data: list) -> list:
     if data and isinstance(data[0], list) and data[0]:
         if data[0][0] in ("urlkey", "original"):
             return data[1:]
@@ -541,13 +541,13 @@ def _cdx_params(
     resume_key: Optional[str] = None,
     limit: Optional[int] = None,
     collapse: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """CDX request parameters shared by both fetch paths.
 
     `collapse` carries the run's collapse mode: `urlkey` for lenient,
     `original` for strict. Callers may pass None to omit the parameter.
     """
-    params: Dict[str, Any] = {
+    params: dict[str, Any] = {
         "url": target_url,
         "output": "json",
         "filter": CDX_FILTER,
@@ -575,7 +575,7 @@ def fetch_page_rows(
     collapse: Optional[str],
     session: requests.Session,
     headers: dict,
-) -> List[List]:
+) -> list[list]:
     """Fetch one page (following in-page resumeKey chaining). Returns data rows.
 
     NOTE: `limit` is intentionally NOT sent here. In pagination mode the
@@ -588,9 +588,9 @@ def fetch_page_rows(
     api_url = "https://web.archive.org/cdx/search/cdx"
     params = _cdx_params(target_url, page=page, page_size=page_size, collapse=collapse)
 
-    rows: List[List] = []
+    rows: list[list] = []
     resume_key: Optional[str] = None
-    seen_keys: Set[str] = set()
+    seen_keys: set[str] = set()
     # No hard cap on chaining: safety rests on the cycle detection below
     # (a repeated resumeKey breaks the loop) and on terminating when a
     # response carries no resumeKey.
@@ -625,7 +625,7 @@ def fetch_resumekey_rows(
     collapse: Optional[str],
     session: requests.Session,
     headers: dict,
-) -> Generator[List, None, Optional[str]]:
+) -> Generator[list, None, Optional[str]]:
     """Sequential resumeKey fetch (fallback path). Yields data rows.
 
     Returns the last resumeKey via the generator return value (PEP 380),
@@ -634,8 +634,8 @@ def fetch_resumekey_rows(
     api_url = "https://web.archive.org/cdx/search/cdx"
     params = _cdx_params(target_url, limit=limit, collapse=collapse)
     resume_key = initial_resume_key
-    seen_request_keys: Set[str] = set()
-    seen_response_keys: Set[str] = set()
+    seen_request_keys: set[str] = set()
+    seen_response_keys: set[str] = set()
     if initial_resume_key:
         logger.info(f"Resuming from resumeKey: {initial_resume_key}")
 
@@ -677,8 +677,7 @@ def fetch_resumekey_rows(
             logger.warning("No valid data rows in this chunk, stopping pagination")
             resume_key = new_key
             break
-        for row in valid:
-            yield row
+        yield from valid
         if new_key:
             resume_key = new_key
         else:
@@ -688,15 +687,15 @@ def fetch_resumekey_rows(
 
 
 def _rows_to_keys(
-    rows: Iterable[List], key_opts: Optional[Dict[str, Any]]
-) -> List[str]:
+    rows: Iterable[list], key_opts: Optional[dict[str, Any]]
+) -> list[str]:
     """Convert CDX data rows (fl=original) into surt keys.
 
     Original spellings are intentionally not returned (and not stored):
     the key set is the only thing the scan needs, and --output-archived
     reports the matched local input lines instead.
     """
-    out: List[str] = []
+    out: list[str] = []
     for row in rows:
         if not isinstance(row, list) or not row:
             continue
@@ -708,13 +707,13 @@ def _rows_to_keys(
 
 def _fetch_pages_parallel(
     target_url: str,
-    pages: List[int],
+    pages: list[int],
     page_size: Optional[int],
-    key_opts: Optional[Dict[str, Any]],
+    key_opts: Optional[dict[str, Any]],
     workers: int,
     headers: dict,
     collapse: Optional[str],
-) -> Generator[Tuple[int, List[str]], None, None]:
+) -> Generator[tuple[int, list[str]], None, None]:
     """Fetch pages concurrently; yields (page, surt_keys) as they complete."""
     thread_state = threading.local()
 
@@ -725,7 +724,7 @@ def _fetch_pages_parallel(
             thread_state.session = sess
         return sess
 
-    def _work(page: int) -> Tuple[int, List[str]]:
+    def _work(page: int) -> tuple[int, list[str]]:
         sess = _get_session()
         rows = fetch_page_rows(target_url, page, page_size, collapse, sess, headers)
         return page, _rows_to_keys(rows, key_opts)
@@ -739,7 +738,7 @@ def _fetch_pages_parallel(
 def ensure_archived_db(
     target_url: str,
     cache_file: str,
-    key_opts: Optional[Dict[str, Any]] = None,
+    key_opts: Optional[dict[str, Any]] = None,
     initial_resume_key: Optional[str] = None,
     limit: Optional[int] = None,
     page_size: Optional[int] = None,
@@ -798,7 +797,7 @@ def ensure_archived_db(
                 target_url, initial_resume_key, limit, collapse, session, headers
             )
             inserted = 0
-            batch: List[str] = []
+            batch: list[str] = []
             with tqdm(desc="Fetching (resumeKey)", unit="rec") as bar:
                 try:
                     while True:
@@ -899,8 +898,8 @@ def ensure_archived_db(
 
 
 def extract_archived_urls(
-    cdx_data: Iterable[List], key_opts: Optional[Dict[str, Any]] = None
-) -> Set[str]:
+    cdx_data: Iterable[list], key_opts: Optional[dict[str, Any]] = None
+) -> set[str]:
     """
     Extract a set of surt keys from CDX data.
 
@@ -971,10 +970,10 @@ def extract_archived_urls(
 # ========================================
 def detect_not_archived(
     input_file: str,
-    archived_keys: Set[str],
-    key_opts: Optional[Dict[str, Any]] = None,
+    archived_keys: set[str],
+    key_opts: Optional[dict[str, Any]] = None,
     collect_archived: bool = False,
-) -> Tuple[List[str], Optional[List[str]], int]:
+) -> tuple[list[str], Optional[list[str]], int]:
     """
     Detect URLs in the input file that have not been archived (in-memory set version).
 
@@ -1035,11 +1034,11 @@ def count_input_lines(input_file: str) -> Optional[int]:
 def scan_input_against_db(
     input_file: str,
     db_path: str,
-    key_opts: Optional[Dict[str, Any]] = None,
+    key_opts: Optional[dict[str, Any]] = None,
     output_file: Optional[str] = None,
     output_archived: Optional[str] = None,
     batch_size: int = LOOKUP_BATCH_SIZE,
-) -> Tuple[int, int, int]:
+) -> tuple[int, int, int]:
     """Stream the input file against SQLite and write results incrementally.
 
     Never accumulates URL lists in RAM: results go straight to disk.
@@ -1070,7 +1069,7 @@ def scan_input_against_db(
             total_count = 0
             not_count = 0
             arch_count = 0
-            batch: List[Tuple[str, str]] = []  # (original line, surt key)
+            batch: list[tuple[str, str]] = []  # (original line, surt key)
 
             def _flush() -> None:
                 nonlocal not_count, arch_count
