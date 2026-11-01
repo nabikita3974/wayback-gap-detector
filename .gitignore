@@ -14,6 +14,9 @@ venv/
 .venv/
 env/
 
+# Ruff
+.ruff_cache
+
 # Project outputs (local data, never commit)
 urls.txt
 urls_*.txt
