@@ -202,6 +202,13 @@ To add or update a dependency, use `uv add <package>`, then regenerate `requirem
 uv export --no-dev --no-hashes --no-emit-project -o requirements.txt
 ```
 
+Lint and format the code with [Ruff](https://docs.astral.sh/ruff/):
+
+```bash
+uv run ruff check .      # lint (add --fix to apply safe fixes)
+uv run ruff format .     # format
+```
+
 ---
 
 ## Running the tests
@@ -248,8 +255,9 @@ Contributions are welcome!
 1. Fork the repository and create a feature branch.
 2. Make your changes and add or update tests as appropriate.
 3. If you change dependencies, update `pyproject.toml`, `uv.lock` and `requirements.txt` together (see "Development setup").
-4. Ensure all tests pass: `python -m unittest discover -v`
-5. Open a pull request with a clear description of what changed and why.
+4. Make sure the code passes the lint and format checks: `uv run ruff check .` and `uv run ruff format --check .`
+5. Ensure all tests pass: `python -m unittest discover -v`
+6. Open a pull request with a clear description of what changed and why.
 
 Please keep pull requests focused — one logical change per PR.
 
