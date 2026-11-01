@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Wayback Gap Detector
 Compares a local URL list against the Wayback Machine CDX API
@@ -26,16 +25,13 @@ import sys
 import tempfile
 import threading
 import time
+from collections.abc import Generator, Iterable
 from pathlib import Path
-from typing import Any, Set, List, Optional, Generator, Iterable, Tuple, Dict
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import requests
 from requests.adapters import HTTPAdapter
-from tqdm import tqdm
-from urllib3.util import Retry
-
 from surt import surt
-from surt.surt import CompositeCanonicalizer
 from surt.GoogleURLCanonicalizer import (
     DECIMAL_IP,
     escapeOnce,
@@ -44,6 +40,9 @@ from surt.GoogleURLCanonicalizer import (
     unescapeRepeatedly,
 )
 from surt.IAURLCanonicalizer import canonicalize as ia_canonicalize
+from surt.surt import CompositeCanonicalizer
+from tqdm import tqdm
+from urllib3.util import Retry
 
 # Logger setup
 logger = logging.getLogger(__name__)
@@ -999,7 +998,7 @@ def detect_not_archived(
     archived = [] if collect_archived else None
     total_count = 0
 
-    with open(input_file, "r", encoding="utf-8") as f:
+    with open(input_file, encoding="utf-8") as f:
         for line in f:
             original_url = line.strip()
 
@@ -1090,7 +1089,7 @@ def scan_input_against_db(
                             out_f.write(original + "\n")
                 batch.clear()
 
-            with open(input_file, "r", encoding="utf-8") as f:
+            with open(input_file, encoding="utf-8") as f:
                 with tqdm(total=total_lines, desc="Checking URLs", unit="url") as bar:
                     for line in f:
                         original_url = line.strip()

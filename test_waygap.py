@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Wayback Gap Detector - Unit Tests
 Tests for each feature of waygap.py.
@@ -10,43 +9,42 @@ Numeric-shaped hosts are covered explicitly (they are the only place
 where our keys intentionally diverge from surt's gethostbyname_ex path).
 """
 
-import unittest
-import os
 import json
+import os
 import sqlite3
 import tempfile
-from unittest.mock import patch, MagicMock
+import unittest
+from unittest.mock import MagicMock, patch
+
+import requests
+from surt import surt as upstream_surt
 
 from waygap import (
-    normalize_key,
-    build_key_opts,
-    key_profile,
-    KEY_CANONICALIZER,
-    __version__,
-    USER_AGENT,
-    extract_archived_urls,
-    detect_not_archived,
-    ensure_archived_db,
-    scan_input_against_db,
-    open_db,
-    insert_urls,
-    count_archived,
-    read_meta,
-    archived_columns,
-    fetch_page_rows,
-    get_num_pages,
-    _cdx_params,
-    _split_resume_key,
-    CDX_FILTER,
-    CDX_FL,
     CDX_COLLAPSE,
     CDX_COLLAPSE_STRICT,
+    CDX_FILTER,
+    CDX_FL,
     DB_SCHEMA_VERSION,
-    CDXAPIError,
+    USER_AGENT,
     InputFileError,
+    __version__,
+    _cdx_params,
+    _split_resume_key,
+    archived_columns,
+    build_key_opts,
+    count_archived,
+    detect_not_archived,
+    ensure_archived_db,
+    extract_archived_urls,
+    fetch_page_rows,
+    get_num_pages,
+    insert_urls,
+    key_profile,
+    normalize_key,
+    open_db,
+    read_meta,
+    scan_input_against_db,
 )
-from surt import surt as upstream_surt
-import requests
 
 
 def _json_response(payload):
