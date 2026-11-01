@@ -1,0 +1,13 @@
+[project]
+name = "wayback-gap-detector"
+version = "0.1.0"
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.25.0",
+    "surt==0.3.1",
+    "tqdm>=4.60.0",
+    "urllib3>=1.26.0",
+]
+
+[dependency-groups]
+dev = []

@@ -162,6 +162,31 @@ CDX応答と手元URLリストの**両辺**を、同一のフラグ設定で [su
 
 ---
 
+## 開発環境のセットアップ
+
+開発には [uv](https://docs.astral.sh/uv/) を使用します。uvをインストールしたあと、次のコマンドで仮想環境（`.venv`）の作成と依存関係のインストールが完了します。必要なPythonがない場合は、uvが自動で用意します。
+
+```bash
+git clone https://github.com/nabikita3974/wayback-gap-detector.git
+cd wayback-gap-detector
+uv sync
+```
+
+コマンドは `uv run` を付けて実行します（仮想環境の有効化は不要です）。
+
+```bash
+uv run python waygap.py "https://example.com/blog/*" --input urls.txt
+uv run python -m unittest discover -v
+```
+
+依存関係を追加・更新するときは `uv add <パッケージ名>` を使い、`requirements.txt` を再生成してください。
+
+```bash
+uv export --no-dev --no-hashes --no-emit-project -o requirements.txt
+```
+
+---
+
 ## テストの実行
 
 ```bash
@@ -188,7 +213,10 @@ wayback-gap-detector/
 ├── LICENSE             # AGPL-3.0-or-later
 ├── README.md           # 英語版 README
 ├── README_ja.md        # このファイル（日本語版）
-├── requirements.txt    # Python依存ライブラリ
+├── pyproject.toml      # プロジェクト設定・依存関係
+├── uv.lock             # ロックファイル（uvが管理）
+├── .python-version     # 開発時に使うPythonのバージョン
+├── requirements.txt    # Python依存ライブラリ（pyproject.tomlから生成）
 ├── .github/workflows/tests.yml  # CI（ユニットテスト）
 └── .gitignore          # Git ignore ルール
 ```
@@ -201,8 +229,9 @@ wayback-gap-detector/
 
 1. リポジトリをフォークし、機能ブランチを作成してください。
 2. 変更を加え、必要に応じてテストを追加・更新してください。
-3. すべてのテストが通ることを確認してください: `python -m unittest discover -v`
-4. 何を・なぜ変更したのかを明確に記述したプルリクエストを出してください。
+3. 依存関係を変更した場合は、`pyproject.toml`・`uv.lock`・`requirements.txt` をそろえてコミットしてください（手順は「開発環境のセットアップ」を参照）。
+4. すべてのテストが通ることを確認してください: `python -m unittest discover -v`
+5. 何を・なぜ変更したのかを明確に記述したプルリクエストを出してください。
 
 プルリクエストは1つ1つの論理的変更に絞ってください。
 
