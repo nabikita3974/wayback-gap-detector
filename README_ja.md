@@ -192,6 +192,12 @@ uv run ruff check .      # Lint（--fix を付けると安全な修正を自動�
 uv run ruff format .     # フォーマット
 ```
 
+型チェックには [basedpyright](https://docs.basedpyright.com/latest/) を使用します:
+
+```bash
+uv run basedpyright .    # 型チェック
+```
+
 ---
 
 ## テストの実行
@@ -237,8 +243,8 @@ wayback-gap-detector/
 1. リポジトリをフォークし、機能ブランチを作成してください。
 2. 変更を加え、必要に応じてテストを追加・更新してください。
 3. 依存関係を変更した場合は、`pyproject.toml`・`uv.lock`・`requirements.txt` をそろえてコミットしてください（手順は「開発環境のセットアップ」を参照）。
-4. Lintとフォーマットのチェックが通ることを確認してください: `uv run ruff check .` と `uv run ruff format --check .`
-5. すべてのテストが通ることを確認してください: `python -m unittest discover -v`
+4. Lint・フォーマット・型チェックが通ることを確認してください: `uv run ruff check .`、`uv run ruff format --check .`、`uv run basedpyright .`
+5. すべてのテストが通ることを確認してください: `uv run python -m unittest discover -v`
 6. 何を・なぜ変更したのかを明確に記述したプルリクエストを出してください。
 
 プルリクエストは1つ1つの論理的変更に絞ってください。
