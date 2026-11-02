@@ -520,7 +520,7 @@ def get_num_pages(
     truncate the fetch at the tail).
     """
     api_url = "https://web.archive.org/cdx/search/cdx"
-    params = {
+    params: dict[str, Any] = {
         "url": target_url,
         "filter": CDX_FILTER,
         "showNumPages": "true",
@@ -909,7 +909,8 @@ def ensure_archived_db(
 
 
 def extract_archived_urls(
-    cdx_data: Iterable[list], key_opts: Optional[dict[str, Any]] = None
+    cdx_data: Optional[Iterable[object]],
+    key_opts: Optional[dict[str, Any]] = None,
 ) -> set[str]:
     """
     Extract a set of surt keys from CDX data.
@@ -925,9 +926,7 @@ def extract_archived_urls(
         A set of surt keys.
     """
     # Return early if cdx_data is not iterable
-    try:
-        iter(cdx_data)  # type: ignore[arg-type]
-    except TypeError:
+    if not isinstance(cdx_data, Iterable):
         logger.warning(f"cdx_data is not iterable: {type(cdx_data).__name__}")
         return set()
 
@@ -1021,7 +1020,7 @@ def detect_not_archived(
 
             if key not in archived_keys:
                 not_archived.append(original_url)
-            elif collect_archived:
+            elif archived is not None:
                 archived.append(original_url)
 
     return not_archived, archived, total_count
