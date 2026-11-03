@@ -1,1 +1,5 @@
+# Commits with large mechanical changes (ruff format, auto-fixes, type
+# annotation cleanup) are ignored by git blame to keep history readable.
+# Reviewed by humans in the respective PRs; see file commits for details.
+
 1fb2a952005fe54f5cd05ee2c19419ffc1f7b181

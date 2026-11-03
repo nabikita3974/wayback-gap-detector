@@ -198,6 +198,14 @@ uv run ruff format .     # フォーマット
 uv run basedpyright .    # 型チェック
 ```
 
+フォーマットコミットによって`git blame`が断片化されるのを防ぐため、このリポジトリでは`.git-blame-ignore-revs`を使用しています。
+
+ローカルで有効にするには、以下のコマンドを実行してください。
+
+```bash
+git config blame.ignoreRevsFile .git-blame-ignore-revs
+```
+
 ---
 
 ## テストの実行
@@ -231,6 +239,7 @@ wayback-gap-detector/
 ├── .python-version     # 開発時に使うPythonのバージョン
 ├── requirements.txt    # Python依存ライブラリ（pyproject.tomlから生成）
 ├── .github/workflows/tests.yml  # CI（ユニットテスト）
+├── .git-blame-ignore-revs  # git blameが無視するコミットハッシュ一覧（機械的な大規模コミット）
 └── .gitignore          # Git ignore ルール
 ```
 

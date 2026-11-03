@@ -215,6 +215,14 @@ Type checking is performed with [basedpyright](https://docs.basedpyright.com/lat
 uv run basedpyright .    # Type check
 ```
 
+To prevent formatting commits from fragmenting `git blame`, this repository uses `.git-blame-ignore-revs`.
+
+Enable it locally with:
+
+```bash
+git config blame.ignoreRevsFile .git-blame-ignore-revs
+```
+
 ---
 
 ## Running the tests
@@ -247,8 +255,8 @@ wayback-gap-detector/
 ├── uv.lock             # Lock file (managed by uv)
 ├── .python-version     # Python version used for development
 ├── requirements.txt    # Python dependencies (generated from pyproject.toml)
-├── requirements.txt    # Python dependencies
 ├── .github/workflows/tests.yml  # CI (unit tests)
+├── .git-blame-ignore-revs  # hash list ignored by git blame (large mechanical commits)
 └── .gitignore          # Git ignore rules
 ```
 
