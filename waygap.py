@@ -27,7 +27,7 @@ import threading
 import time
 from collections.abc import Generator, Iterable
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -153,6 +153,11 @@ def attemptIPFormats_nodns(host):
     return None
 
 
+def _unescape_bytes(data: bytes) -> bytes:
+    """Type boundary for untyped unescapeRepeatedly(): bytes in, bytes out."""
+    return cast(bytes, unescapeRepeatedly(data))
+
+
 def canonicalize_nodns(url, **_ignored):
     """Copy of surt.GoogleURLCanonicalizer.canonicalize (module-level fn).
 
@@ -171,7 +176,7 @@ def canonicalize_nodns(url, **_ignored):
         url.query = minimalEscape(url.query)
 
     if url.host:
-        host = unescapeRepeatedly(url.host)
+        host = _unescape_bytes(url.host)
         try:
             host.decode("ascii")
         except UnicodeDecodeError:
@@ -201,6 +206,12 @@ def canonicalize_nodns(url, **_ignored):
 
 # Canonicalizer chain: [nodns Google stage] -> [IA stage (its flags apply here)].
 KEY_CANONICALIZER = CompositeCanonicalizer([canonicalize_nodns, ia_canonicalize])
+
+
+def _surt_key(text: str, **opts: Any) -> str:
+    """surt() always returns str for str input (bytes only for bytes input).
+    Type boundary for the untyped surt library; the cast is centralized here."""
+    return cast(str, surt(text, canonicalizer=KEY_CANONICALIZER, **opts))
 
 
 def build_key_opts(ignore_protocol: bool, ignore_www: bool) -> dict[str, Any]:
@@ -250,7 +261,7 @@ def normalize_key(url: str, key_opts: Optional[dict[str, Any]] = None) -> str:
             # m.group(0) spans "scheme:"; lower it while keeping the colon
             # and everything after it intact.
             text = m.group(0).lower() + text[m.end() :]
-    return surt(text, canonicalizer=KEY_CANONICALIZER, **opts)
+    return _surt_key(text, **opts)
 
 
 # ========================================
@@ -509,7 +520,7 @@ def get_num_pages(
     truncate the fetch at the tail).
     """
     api_url = "https://web.archive.org/cdx/search/cdx"
-    params = {
+    params: dict[str, Any] = {
         "url": target_url,
         "filter": CDX_FILTER,
         "showNumPages": "true",
@@ -898,7 +909,8 @@ def ensure_archived_db(
 
 
 def extract_archived_urls(
-    cdx_data: Iterable[list], key_opts: Optional[dict[str, Any]] = None
+    cdx_data: Optional[Iterable[object]],
+    key_opts: Optional[dict[str, Any]] = None,
 ) -> set[str]:
     """
     Extract a set of surt keys from CDX data.
@@ -914,9 +926,7 @@ def extract_archived_urls(
         A set of surt keys.
     """
     # Return early if cdx_data is not iterable
-    try:
-        iter(cdx_data)  # type: ignore[arg-type]
-    except TypeError:
+    if not isinstance(cdx_data, Iterable):
         logger.warning(f"cdx_data is not iterable: {type(cdx_data).__name__}")
         return set()
 
@@ -1010,7 +1020,7 @@ def detect_not_archived(
 
             if key not in archived_keys:
                 not_archived.append(original_url)
-            elif collect_archived:
+            elif archived is not None:
                 archived.append(original_url)
 
     return not_archived, archived, total_count

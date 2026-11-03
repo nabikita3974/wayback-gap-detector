@@ -501,6 +501,7 @@ class TestDetectNotArchived(unittest.TestCase):
             self.temp_file.name, archived_keys, collect_archived=True
         )
         self.assertEqual(total_count, 3)
+        assert archived is not None
         self.assertEqual(len(archived), 1)
         self.assertIn("https://example.com/page1", archived)
         self.assertEqual(len(not_archived), 2)
