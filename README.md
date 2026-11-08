@@ -256,6 +256,7 @@ wayback-gap-detector/
 ├── .python-version     # Python version used for development
 ├── requirements.txt    # Python dependencies (generated from pyproject.toml)
 ├── .github/workflows/tests.yml  # CI (unit tests)
+├── .github/dependabot.yml  # Dependabot config (GitHub Actions updates)
 ├── .git-blame-ignore-revs  # hash list ignored by git blame (large mechanical commits)
 └── .gitignore          # Git ignore rules
 ```
