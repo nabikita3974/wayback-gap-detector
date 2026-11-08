@@ -255,8 +255,8 @@ wayback-gap-detector/
 ├── uv.lock             # Lock file (managed by uv)
 ├── .python-version     # Python version used for development
 ├── requirements.txt    # Python dependencies (generated from pyproject.toml)
-├── .github/workflows/tests.yml  # CI (unit tests)
 ├── .github/dependabot.yml  # Dependabot config (GitHub Actions updates)
+├── .github/workflows/tests.yml  # CI (tests, lint, type check)
 ├── .git-blame-ignore-revs  # hash list ignored by git blame (large mechanical commits)
 └── .gitignore          # Git ignore rules
 ```

@@ -238,8 +238,8 @@ wayback-gap-detector/
 ├── uv.lock             # ロックファイル（uvが管理）
 ├── .python-version     # 開発時に使うPythonのバージョン
 ├── requirements.txt    # Python依存ライブラリ（pyproject.tomlから生成）
-├── .github/workflows/tests.yml  # CI（ユニットテスト）
 ├── .github/dependabot.yml  # Dependabot設定（GitHub Actionsの更新）
+├── .github/workflows/tests.yml  # CI（テスト・Lint・型チェック）
 ├── .git-blame-ignore-revs  # git blameが無視するコミットハッシュ一覧（機械的な大規模コミット）
 └── .gitignore          # Git ignore ルール
 ```
