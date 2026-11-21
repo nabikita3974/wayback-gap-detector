@@ -967,12 +967,15 @@ class TestResumeKeyCache(unittest.TestCase):
         mode: str | None = "resumekey",
         urls: tuple[str, ...] | list[str] = (),
         marked: bool = False,
+        resume_key: str | None = None,
     ):
         conn = open_db(self.cache)
         try:
             meta = {**expected_meta(target, {}, None), "completed": completed}
             if mode is not None:
                 meta["mode"] = mode
+            if resume_key is not None:
+                meta["resume_key"] = resume_key
             if marked:
                 meta["resumekey_v"] = RESUMEKEY_FETCH_VERSION
             write_meta(conn, meta)
@@ -1040,7 +1043,7 @@ class TestResumeKeyCache(unittest.TestCase):
 
     @patch("requests.Session")
     def test_resume_key_cycle_leaves_cache_incomplete(self, mock_session_cls):
-        self._make_cache(urls=["http://a.example/"])
+        self._make_cache(urls=["http://a.example/"], resume_key="KEY1", marked=True)
         mock_session_cls.return_value.get.return_value = _json_response(
             [["original"], ["http://b.example/"], [], ["KEY1"]]
         )
@@ -1073,6 +1076,7 @@ class TestResumeKeyCache(unittest.TestCase):
         self.assertEqual(keys, {normalize_key("http://a.example/")})
         self.assertEqual(meta.get("completed"), "0")
         self.assertEqual(meta.get("resumekey_v"), RESUMEKEY_FETCH_VERSION)
+        self.assertEqual(meta.get("resume_key"), "KEY1")
 
         def _route_resume(url, params=None, headers=None, timeout=None):
             params = params or {}
@@ -1149,6 +1153,57 @@ class TestResumeKeyCache(unittest.TestCase):
         keys, meta = self._state()
         self.assertEqual(keys, set())
         self.assertEqual(meta.get("completed"), "0")
+        self.assertNotIn("resume_key", meta)
+
+    @patch("waygap.time.sleep")
+    @patch("requests.Session")
+    def test_no_resume_hint_when_checkpoint_cannot_be_saved(
+        self, mock_session_cls, _sleep
+    ):
+        mock_session_cls.return_value.get.side_effect = self._route_fail_after_one_row
+        original_write = write_meta
+
+        def write(conn, values):
+            if "resume_key" in values:
+                raise sqlite3.OperationalError("checkpoint full")
+            original_write(conn, values)
+
+        with (
+            patch("waygap.write_meta", side_effect=write),
+            self.assertLogs("waygap", level="INFO") as logs,
+            patch("sys.argv", ["waygap.py", TARGET, "--cache", self.cache]),
+        ):
+            self.assertEqual(main(), 1)
+        keys, meta = self._state()
+        self.assertEqual(keys, {normalize_key("http://a.example/")})
+        self.assertEqual(meta.get("completed"), "0")
+        self.assertNotIn("resume_key", meta)
+        messages = [record.getMessage() for record in logs.records]
+        self.assertIn("Unexpected error: checkpoint full", messages)
+        self.assertFalse(any("--resume-key" in message for message in messages))
+
+    @patch("requests.Session")
+    def test_pre_checkpoint_completed_cache_is_fetched_again(self, mock_session_cls):
+        self._make_cache(completed="1", urls=["http://a.example/"])
+        conn = open_db(self.cache)
+        try:
+            write_meta(conn, {"resumekey_v": "2"})
+        finally:
+            conn.close()
+        mock_session_cls.return_value.get.side_effect = (
+            lambda url, params=None, **kwargs: (
+                _no_pagination_response()
+                if "showNumPages" in (params or {})
+                else _json_response([["original"], ["http://b.example/"]])
+            )
+        )
+        ensure_archived_db(TARGET, self.cache)
+        keys, meta = self._state()
+        self.assertEqual(
+            keys, {normalize_key(u) for u in ["http://a.example/", "http://b.example/"]}
+        )
+        self.assertEqual(meta.get("completed"), "1")
+        self.assertEqual(meta.get("resumekey_v"), RESUMEKEY_FETCH_VERSION)
 
     @patch("requests.Session")
     def test_rows_before_an_interrupt_survive(self, mock_session_cls):
@@ -1266,22 +1321,86 @@ class TestResumeKeyCache(unittest.TestCase):
             ensure_archived_db(TARGET, self.cache, initial_resume_key="KEY1")
 
     @patch("requests.Session")
-    def test_resume_key_on_legacy_cache_without_mode(self, mock_session_cls):
-        self._make_cache(mode=None, urls=["http://a.example/"])
-        mock_session_cls.return_value.get.return_value = _json_response(
-            [["original"], ["http://b.example/"]]
-        )
+    def test_resume_key_without_checkpoint_is_rejected(self, mock_session_cls):
+        for mode in (None, "resumekey"):
+            with self.subTest(mode=mode):
+                self._make_cache(mode=mode, urls=["http://a.example/"])
+                before = self._state()
+                mock_session_cls.return_value.get.side_effect = _no_network
+                with self.assertRaisesRegex(CacheError, "run without --resume-key"):
+                    ensure_archived_db(TARGET, self.cache, initial_resume_key="KEY1")
+                self.assertEqual(self._state(), before)
+        mock_session_cls.assert_not_called()
 
-        ensure_archived_db(TARGET, self.cache, initial_resume_key="KEY1")
+    @patch("requests.Session")
+    def test_resume_key_must_match_saved_checkpoint(self, mock_session_cls):
+        self._make_cache(urls=["http://a.example/"], resume_key="KEY2", marked=True)
+        before = self._state()
+        mock_session_cls.return_value.get.side_effect = _no_network
+        with self.assertRaisesRegex(CacheError, "saved resume key"):
+            ensure_archived_db(TARGET, self.cache, initial_resume_key="KEY5")
+        self.assertEqual(self._state(), before)
+        mock_session_cls.assert_not_called()
 
+    @patch("requests.Session")
+    def test_old_fetch_version_checkpoint_is_rejected(self, mock_session_cls):
+        self._make_cache(resume_key="KEY1")
+        conn = open_db(self.cache)
+        try:
+            write_meta(conn, {"resumekey_v": "2"})
+        finally:
+            conn.close()
+        before = self._state()
+        mock_session_cls.return_value.get.side_effect = _no_network
+        with self.assertRaisesRegex(CacheError, "run without --resume-key"):
+            ensure_archived_db(TARGET, self.cache, initial_resume_key="KEY1")
+        self.assertEqual(self._state(), before)
+        mock_session_cls.assert_not_called()
+
+    @patch("waygap.time.sleep")
+    @patch("requests.Session")
+    def test_resumed_failure_advances_checkpoint_after_saving_rows(
+        self, mock_session_cls, _sleep
+    ):
+        self._make_cache(urls=["http://a.example/"], resume_key="KEY1", marked=True)
+
+        def route(url, params=None, headers=None, timeout=None):
+            params = params or {}
+            if params.get("resumeKey") == "KEY1":
+                return _json_response(
+                    [["original"], ["http://b.example/"], [], ["KEY2"]]
+                )
+            raise requests.exceptions.ConnectionError("down")
+
+        mock_session_cls.return_value.get.side_effect = route
+        with self.assertRaises(CDXAPIError):
+            ensure_archived_db(TARGET, self.cache, initial_resume_key="KEY1")
         keys, meta = self._state()
-        self.assertEqual(meta.get("completed"), "1")
-        self.assertNotIn("resumekey_v", meta)
-        self.assertEqual(meta.get("mode"), "resumekey")
         self.assertEqual(
-            keys,
-            {normalize_key("http://a.example/"), normalize_key("http://b.example/")},
+            keys, {normalize_key(u) for u in ["http://a.example/", "http://b.example/"]}
         )
+        self.assertEqual(meta.get("resume_key"), "KEY2")
+        self.assertEqual(meta.get("completed"), "0")
+
+    @patch("requests.Session")
+    def test_legacy_cache_can_restart_without_resume_key(self, mock_session_cls):
+        self._make_cache(urls=["http://a.example/"])
+        mock_session_cls.return_value.get.side_effect = (
+            lambda url, params=None, **kwargs: (
+                _no_pagination_response()
+                if "showNumPages" in (params or {})
+                else _json_response(
+                    [["original"], ["http://a.example/"], ["http://b.example/"]]
+                )
+            )
+        )
+        ensure_archived_db(TARGET, self.cache)
+        keys, meta = self._state()
+        self.assertEqual(
+            keys, {normalize_key(u) for u in ["http://a.example/", "http://b.example/"]}
+        )
+        self.assertEqual(meta.get("completed"), "1")
+        self.assertEqual(meta.get("resumekey_v"), RESUMEKEY_FETCH_VERSION)
 
 
 class TestMainResumeKeyOptions(unittest.TestCase):

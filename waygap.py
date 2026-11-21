@@ -67,9 +67,10 @@ USER_AGENT = f"Wayback-Gap-Detector/{__version__} (https://github.com/nabikita39
 DB_SCHEMA_VERSION = "1"
 # Written to meta["resumekey_v"] when a resumeKey fallback fetch starts from
 # the beginning. Earlier versions could mark an incomplete resumeKey cache
-# as completed, so a completed resumeKey cache without it is fetched again.
+# as completed (including after an unchecked manual resume), so older
+# completed resumeKey caches are fetched again.
 # Not part of expected_meta(): pagination caches are not affected.
-RESUMEKEY_FETCH_VERSION = "2"
+RESUMEKEY_FETCH_VERSION = "3"
 LOOKUP_BATCH_SIZE = 500
 INSERT_CHUNK_SIZE = 10000
 
@@ -825,7 +826,11 @@ def _store_resumekey_rows(
                     insert_urls(conn, batch)
                     inserted += len(batch)
                     bar.update(len(batch))
-        except CDXAPIError:
+        except CDXAPIError as error:
+            if isinstance(error, ResumeKeyRequestError) and error.resume_key:
+                # The finally block above has saved all rows before this request.
+                # If either the flush or this write fails, no resume hint escapes.
+                write_meta(conn, {"resume_key": error.resume_key})
             logger.error(f"Fetched rows stored ({inserted} records).")
             raise
     return inserted
@@ -887,6 +892,20 @@ def ensure_archived_db(
                 raise CacheError(
                     f"{cache_file} was built in pagination mode, which resumes "
                     "automatically; run without --resume-key"
+                )
+
+            if meta.get("resumekey_v") != RESUMEKEY_FETCH_VERSION or not meta.get(
+                "resume_key"
+            ):
+                raise CacheError(
+                    f"{cache_file} has no verified saved resume key; "
+                    "run without --resume-key to fetch from the beginning"
+                )
+            if initial_resume_key != meta["resume_key"]:
+                raise CacheError(
+                    f"--resume-key does not match the saved resume key in {cache_file}; "
+                    "use the key logged for this cache or run without --resume-key "
+                    "to fetch from the beginning"
                 )
 
         if initial_resume_key is None and params_match and is_completed(conn):
