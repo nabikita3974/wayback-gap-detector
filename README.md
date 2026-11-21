@@ -131,7 +131,7 @@ beginning. Omit `--no-cache` on future runs to retain progress.
 
 ## Input file format
 
-`urls.txt` (or the file specified via `--input`) should contain one URL per line:
+`urls.txt` (or the file specified via `--input`) must be UTF-8 and contain one URL per line:
 
 ```
 https://example.com/blog/post-1

@@ -1332,6 +1332,39 @@ class TestMainInputValidation(unittest.TestCase):
                     f"Input file not found: {missing}", "\n".join(logs.output)
                 )
 
+    def test_non_utf8_input_is_rejected_before_fetch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            input_file = Path(directory) / "urls.txt"
+            cases = {
+                "utf16": "https://example.com/\n".encode("utf-16"),
+                "invalid_after_first_chunk": (
+                    b"https://example.com/\n" * 100_000 + b"https://example.com/\x82\n"
+                ),
+            }
+            for name, data in cases.items():
+                input_file.write_bytes(data)
+                with (
+                    self.subTest(name=name),
+                    patch(
+                        "sys.argv",
+                        ["waygap.py", TARGET, "--input", str(input_file), "--no-cache"],
+                    ),
+                    patch(
+                        "waygap.ensure_archived_db", side_effect=CacheError("stop")
+                    ) as mock_ensure,
+                    patch(
+                        "waygap.tempfile.mkstemp", wraps=tempfile.mkstemp
+                    ) as mock_mkstemp,
+                    self.assertLogs("waygap", level="ERROR") as logs,
+                ):
+                    self.assertEqual(main(), 1)
+                    mock_ensure.assert_not_called()
+                    mock_mkstemp.assert_not_called()
+                    self.assertIn(
+                        f"Input file is not valid UTF-8: {input_file}",
+                        "\n".join(logs.output),
+                    )
+
     def test_input_directory_is_rejected_before_fetch(self):
         with (
             tempfile.TemporaryDirectory() as directory,

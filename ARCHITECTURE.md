@@ -18,7 +18,7 @@ Page-count queries (`showNumPages`) send the same `pageSize` and `collapse` as p
 
 ```mermaid
 flowchart TD
-    CLI["CLI arguments\ntarget_url / --input / --output / --cache\nkey_opts = build_key_opts(ignore_protocol, ignore_www)"] --> INPUT["Validate --input exists and can be read"]
+    CLI["CLI arguments\ntarget_url / --input / --output / --cache\nkey_opts = build_key_opts(ignore_protocol, ignore_www)"] --> INPUT["Validate --input as UTF-8 in chunks"]
     INPUT --> ENSURE["ensure_archived_db\nbuild / reuse / resume cache\n(records key_profile in meta)"]
 
     subgraph FETCH["CDX fetch phase"]
@@ -112,7 +112,7 @@ flowchart TD
 | `_store_resumekey_rows(conn, rows, key_opts) -> int` | Inserts the keys of `fetch_resumekey_rows` rows in batches and returns the count. Pending keys are flushed on every exit (including errors and Ctrl+C). After a failed request (`ResumeKeyRequestError`), the error propagates only after the flush succeeds. The CLI decides whether the stored progress can be resumed. If the flush fails, the `sqlite3` error propagates and no resumeKey is logged |
 | `count_input_lines(input_file: str) -> int \| None` | Counts total lines quickly for the `scan_input_against_db` progress bar (returns `None` on failure) |
 | `scan_input_against_db(input_file, db_path, key_opts=None, output_file=None, output_archived=None, batch_size=LOOKUP_BATCH_SIZE) -> tuple[int, int, int]` | Streams, keys, batch-queries, and incrementally writes the input, returning `(total, not archived, archived)` (production path) |
-| `main() -> int` | CLI entry point (argument parsing, `build_key_opts`, DB setup, matching, exit code). Validates that the input file exists and can be read before cache setup or CDX requests. Rejects `--resume-key` combined with `--no-cache` or `--refresh`. On a failed resumeKey request, suggests a key only with persistent progress and a nonempty key; otherwise suggests re-running from the beginning |
+| `main() -> int` | CLI entry point (argument parsing, `build_key_opts`, DB setup, matching, exit code). Validates the entire input file as UTF-8 in bounded chunks before cache setup or CDX requests. Rejects `--resume-key` combined with `--no-cache` or `--refresh`. On a failed resumeKey request, suggests a key only with persistent progress and a nonempty key; otherwise suggests re-running from the beginning |
 
 Pagination progress reads the existing archived count once before fetching, then
 adds the `conn.total_changes` delta around each `insert_urls()` call. This counts

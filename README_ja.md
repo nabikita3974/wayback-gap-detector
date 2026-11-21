@@ -120,7 +120,7 @@ python waygap.py "https://example.com/blog/*" \
 
 ## 入力ファイル形式
 
-`urls.txt`（または `--input` で指定したファイル）は1行に1URLで記述します:
+`urls.txt`（または `--input` で指定したファイル）はUTF-8で保存し、1行に1URLを記述します:
 
 ```
 https://example.com/blog/post-1

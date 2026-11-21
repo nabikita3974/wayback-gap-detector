@@ -1360,10 +1360,15 @@ examples:
     temp_db: str | None = None
     try:
         try:
-            with open(args.input_file, "rb") as input_file:
-                input_file.read(1)
+            with open(args.input_file, encoding="utf-8") as input_file:
+                while input_file.read(1024 * 1024):
+                    pass
         except FileNotFoundError as e:
             raise InputFileError(f"Input file not found: {args.input_file}") from e
+        except UnicodeDecodeError as e:
+            raise InputFileError(
+                f"Input file is not valid UTF-8: {args.input_file}. Save it as UTF-8 and try again."
+            ) from e
         except OSError as e:
             raise InputFileError(
                 f"Cannot read input file: {args.input_file}: {e}"
