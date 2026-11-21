@@ -201,6 +201,21 @@ Issues and pull requests are welcome; please keep each PR to one logical change.
 
 ---
 
+## Contributors
+
+- [nabikita3974](https://github.com/nabikita3974)
+- [abhinavrastogi2627](https://github.com/abhinavrastogi2627)
+
+---
+
+## Acknowledgements
+
+- [Internet Archive](https://archive.org/) for the Wayback Machine and its CDX API
+- [surt](https://github.com/internetarchive/surt) for URL canonicalization
+- [wayback](https://github.com/edgi-govdata-archiving/wayback) by EDGI, whose release notes documented the CDX API rate limit
+
+---
+
 ## License
 
 This project is licensed under **AGPL-3.0-or-later**

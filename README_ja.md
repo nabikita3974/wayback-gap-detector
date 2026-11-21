@@ -173,6 +173,21 @@ Issueやプルリクエストは歓迎します。プルリクエストは1つ�
 
 ---
 
+## 貢献者
+
+- [nabikita3974](https://github.com/nabikita3974)
+- [abhinavrastogi2627](https://github.com/abhinavrastogi2627)
+
+---
+
+## 謝辞
+
+- Wayback Machine と CDX API を提供する [Internet Archive](https://archive.org/)
+- URL正規化に使用している [surt](https://github.com/internetarchive/surt)
+- CDX API のリクエスト上限の参考にした、EDGI の [wayback](https://github.com/edgi-govdata-archiving/wayback)
+
+---
+
 ## ライセンス
 
 このプロジェクトは **AGPL-3.0-or-later**（[GNU Affero General Public License v3以降](https://www.gnu.org/licenses/agpl-3.0.html)）の下で公開されています。
