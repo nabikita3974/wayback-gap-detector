@@ -25,7 +25,7 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Generator, Iterable
+from collections.abc import Callable, Generator, Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -561,9 +561,8 @@ _CDX_LIMITER = _RateLimiter(CDX_REQUEST_INTERVAL)
 def make_session() -> requests.Session:
     session = requests.Session()
     # Retries connection and read errors only. No status is resent here: HTTP
-    # 429 is left to _cdx_get() and 5xx to _get_with_retries() and
-    # get_num_pages(), whose resends go through the shared limiter
-    # (_get_with_retries() also observes `stop`).
+    # 429 is left to _cdx_get() and 5xx to _get_with_retries(), whose resends
+    # go through the shared limiter and observe `stop`.
     # Retry-After stays off so that a 503 carrying it is not resent either.
     retry = Retry(
         total=3,
@@ -678,18 +677,23 @@ def _server_error_response(error: Exception) -> requests.Response | None:
 
 
 def _wait_after_5xx(
-    response: requests.Response, attempt: int, stop: threading.Event | None
+    response: requests.Response,
+    attempt: int,
+    stop: threading.Event | None,
+    *,
+    pause_after_last: bool = True,
 ) -> None:
     """Wait before resending after the 5xx `response` to request `attempt` (0-based).
 
     Raises CDXAPIError when Retry-After asks for longer than the last 429
     pause, even after the last attempt. Otherwise a valid nonzero Retry-After
-    pauses every CDX request through the limiter, even after the last
-    attempt (other workers and the resumeKey fallback keep sending until the
-    run stops). Before the last attempt, this worker also waits
+    pauses every CDX request through the limiter; after the last attempt
+    only if `pause_after_last` (other workers keep sending until the run
+    stops). Before the last attempt, this worker also waits
     CDX_5XX_WAITS[attempt]; the longer of the two decides when it resends.
     After the last attempt, returns without waiting.
     """
+    last = attempt >= len(CDX_5XX_WAITS)
     raw = response.headers.get("Retry-After")
     retry_after: float | None = None
     if raw is not None:
@@ -705,14 +709,48 @@ def _wait_after_5xx(
             f"({retry_after:g} s), longer than the {longest:g} s this tool "
             "waits. Re-run after that time."
         )
-    if retry_after is not None:
+    if retry_after is not None and (pause_after_last or not last):
         logger.warning(
             f"CDX API returned HTTP {status} with Retry-After: {raw}; "
             f"pausing all CDX requests for {retry_after:g} s"
         )
         _CDX_LIMITER.pause(retry_after)
-    if attempt < len(CDX_5XX_WAITS):
+    if not last:
         _pause(CDX_5XX_WAITS[attempt], stop)
+
+
+def _json_body_problem(response: requests.Response) -> str | None:
+    """Describe why `response` has no usable JSON body, or return None."""
+    if (
+        len(response.content) == 0
+        or not response.text.strip()
+        or "application/json" not in response.headers.get("Content-Type", "")
+    ):
+        return "Non-JSON or empty response"
+    return None
+
+
+def _parse_num_pages(response: requests.Response) -> int | None:
+    """Return the page count in a showNumPages body, or None if it is not a number.
+
+    The server returns a bare number (plain text or JSON int).
+    """
+    try:
+        return int(response.text.strip())
+    except ValueError:
+        pass
+    try:
+        data = response.json()
+    except ValueError:
+        return None
+    return int(data) if isinstance(data, int) else None
+
+
+def _num_pages_body_problem(response: requests.Response) -> str | None:
+    """Describe why `response` carries no page count, or return None."""
+    if _parse_num_pages(response) is None:
+        return "non-numeric response"
+    return None
 
 
 def _get_with_retries(
@@ -722,8 +760,13 @@ def _get_with_retries(
     headers: dict,
     timeout: int = 60,
     stop: threading.Event | None = None,
+    *,
+    return_400: bool = False,
+    body_problem: Callable[[requests.Response], str | None] = _json_body_problem,
+    label: str | None = None,
+    pause_after_last_5xx: bool = True,
 ) -> requests.Response:
-    """GET with retries for transport errors, HTTP errors and non-JSON/empty 200s.
+    """GET with retries for transport errors, HTTP errors and unusable 200 bodies.
 
     Makes at most 3 attempts; within one, _cdx_get() may resend after HTTP
     429. HTTP 500/502/503/504 wait as in
@@ -731,46 +774,66 @@ def _get_with_retries(
     _cdx_get(). Once `stop` is set, raises
     _FetchCancelled instead of sending, retrying or logging. A request
     already in progress is not interrupted.
+
+    `return_400` returns an HTTP 400 response at once instead of retrying.
+    `body_problem` judges a 200 body (by default it must be JSON). `label`
+    names the request in the warnings and the final error.
+    `pause_after_last_5xx` is passed to _wait_after_5xx() as
+    `pause_after_last`.
     """
     last_error: Exception | None = None
     for attempt in range(3):
         try:
             response = _cdx_get(session, api_url, params, headers, timeout, stop)
+            # Judged on this attempt's response, before raise_for_status().
+            if return_400 and response.status_code == 400:
+                return response
             response.raise_for_status()
-            content_type = response.headers.get("Content-Type", "")
-            body = response.content
-            if (
-                len(body) == 0
-                or not response.text.strip()
-                or "application/json" not in content_type
-            ):
+            problem = body_problem(response)
+            if problem is None:
+                return response
+            detail = (
+                f"status={response.status_code}, "
+                f"Content-Type={response.headers.get('Content-Type', '')}, "
+                f"content-length={len(response.content)}"
+            )
+            if label is None:
+                logger.warning(f"{problem} (attempt {attempt + 1}/3): {detail}")
+            else:
                 logger.warning(
-                    f"Non-JSON or empty response (attempt {attempt + 1}/3): "
-                    f"status={response.status_code}, Content-Type={content_type}, "
-                    f"content-length={len(body)}"
+                    f"{label} request error (attempt {attempt + 1}/3): "
+                    f"{problem}: {detail}"
                 )
-                if attempt < 2:
-                    _pause(2**attempt, stop)
-                    continue
-                raise CDXAPIError("Non-JSON or empty response (max retries reached)")
-            return response
+            if attempt < 2:
+                _pause(2**attempt, stop)
+                continue
+            if label is None:
+                raise CDXAPIError(f"{problem} (max retries reached)")
+            raise CDXAPIError(
+                f"{label} request failed (max retries reached): {problem}: {detail}"
+            )
         except CDXAPIError:
             raise
         except requests.exceptions.RequestException as e:
             if stop is not None and stop.is_set():
                 raise _FetchCancelled from e
             last_error = e
-            logger.warning(f"Request error (attempt {attempt + 1}/3): {e}")
+            prefix = "Request error" if label is None else f"{label} request error"
+            logger.warning(f"{prefix} (attempt {attempt + 1}/3): {e}")
             server_error = _server_error_response(e)
             if server_error is not None:
-                _wait_after_5xx(server_error, attempt, stop)
+                _wait_after_5xx(
+                    server_error, attempt, stop, pause_after_last=pause_after_last_5xx
+                )
                 continue
             if attempt < 2:
                 _pause(2**attempt, stop)
                 continue
-    raise CDXAPIError(
-        f"CDX API fetch error (max retries reached): {last_error}"
-    ) from last_error
+    if label is None:
+        message = f"CDX API fetch error (max retries reached): {last_error}"
+    else:
+        message = f"{label} request failed (max retries reached): {last_error}"
+    raise CDXAPIError(message) from last_error
 
 
 def get_num_pages(
@@ -780,18 +843,18 @@ def get_num_pages(
     session: requests.Session,
     headers: dict,
 ) -> int | None:
-    """Ask the CDX server for the page count. Returns None if unsupported.
+    """Ask the CDX server for the page count. Returns None on HTTP 400.
 
     Sends the same pageSize/collapse as the paged queries: the page count
     is only valid against the same query shape that will fetch the pages
     (the CDX contract pairs the two; a mismatched pageSize would silently
     truncate the fetch at the tail).
 
-    HTTP 429 is not taken as "unsupported": _cdx_get() pauses and retries,
-    and raises CDXAPIError if the 429s continue. HTTP 500/502/503/504 are
-    retried as in _wait_after_5xx(), up to 3 requests, before falling back;
-    a Retry-After on the last one still pauses every CDX request, so the
-    fallback waits for it.
+    Only HTTP 400 means "pagination unsupported" (the CDX server answers
+    showNumPages and page=N with the same 400 when it has no paging index).
+    Other errors and non-numeric bodies are retried as in
+    _get_with_retries() and then raise CDXAPIError. No pause follows a
+    Retry-After on the last 5xx, since no request follows it.
     """
     api_url = "https://web.archive.org/cdx/search/cdx"
     params: dict[str, Any] = {
@@ -803,32 +866,25 @@ def get_num_pages(
         params["pageSize"] = page_size
     if collapse:
         params["collapse"] = collapse
-    for attempt in range(3):
-        try:
-            response = _cdx_get(session, api_url, params, headers, 60, None)
-            response.raise_for_status()
-            text = response.text.strip()
-            # Server returns a bare number (plain text or JSON int).
-            try:
-                return int(text)
-            except ValueError:
-                data = response.json()
-                return int(data) if isinstance(data, int) else None
-        except (requests.exceptions.RequestException, ValueError) as e:
-            server_error = _server_error_response(e)
-            if server_error is not None:
-                logger.warning(
-                    f"showNumPages request error (attempt {attempt + 1}/3): {e}"
-                )
-                # Runs in the main thread, where Ctrl+C interrupts the wait.
-                _wait_after_5xx(server_error, attempt, None)
-                if attempt < 2:
-                    continue
-            logger.info(
-                f"showNumPages unavailable, falling back to resumeKey mode: {e}"
-            )
-            return None
-    return None
+    # Runs in the main thread without `stop`, where Ctrl+C interrupts the waits.
+    response = _get_with_retries(
+        session,
+        api_url,
+        params,
+        headers,
+        return_400=True,
+        body_problem=_num_pages_body_problem,
+        label="showNumPages",
+        pause_after_last_5xx=False,
+    )
+    if response.status_code == 400:
+        logger.info(
+            "showNumPages returned HTTP 400 (pagination unsupported), "
+            "falling back to resumeKey mode"
+        )
+        return None
+    # Never None here: _num_pages_body_problem() accepted the body.
+    return _parse_num_pages(response)
 
 
 def _cdx_params(
