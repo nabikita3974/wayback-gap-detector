@@ -83,8 +83,8 @@ flowchart TD
 | `_cdx_params` | Builds request parameters shared by both fetch paths |
 | `_split_resume_key` | Splits a trailing resumeKey off the raw response |
 | `_strip_header` | Removes the header row (`urlkey`/`original`) at the start of a chunk |
-| `_get_with_retries` | GET with retries for every CDX request (5xx through `_wait_after_5xx`), also detecting unusable 200 bodies (non-JSON, or non-numeric for the page count) |
-| `get_num_pages` | Fetches the total page count via `showNumPages`; returns `None` only on HTTP 400 (pagination unsupported) and raises `CDXAPIError` once other errors exhaust the retries |
+| `_get_with_retries` | GET with retries for every CDX request (5xx through `_wait_after_5xx`) |
+| `get_num_pages` | Fetches the total page count via `showNumPages` |
 | `fetch_page_rows` | Fetches one page |
 | `fetch_resumekey_rows` | Generator for sequential resumeKey fetching |
 | `_rows_to_keys` | Converts CDX rows into a list of surt keys |
