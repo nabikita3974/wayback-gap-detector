@@ -1,6 +1,23 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "wayback-gap-detector"
-version = "0.1.0"
+dynamic = ["version"]
+description = "Find URLs missing from the Wayback Machine by comparing a local list with CDX data."
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "nabikita3974" }]
+keywords = ["wayback-machine", "internet-archive", "cdx", "urls", "archiving"]
+classifiers = [
+    "Environment :: Console",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.15",
+]
 requires-python = ">=3.11"
 dependencies = [
     "requests>=2.28.0",
@@ -8,6 +25,20 @@ dependencies = [
     "tqdm>=4.65.0",
     "urllib3>=1.26.8",
 ]
+
+[project.urls]
+Homepage = "https://github.com/nabikita3974/wayback-gap-detector"
+Repository = "https://github.com/nabikita3974/wayback-gap-detector"
+Issues = "https://github.com/nabikita3974/wayback-gap-detector/issues"
+
+[project.scripts]
+waygap = "waygap:main"
+
+[tool.setuptools]
+py-modules = ["waygap"]
+
+[tool.setuptools.dynamic]
+version = { attr = "waygap.__version__" }
 
 [dependency-groups]
 dev = [

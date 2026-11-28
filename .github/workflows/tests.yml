@@ -25,6 +25,44 @@ jobs:
         run: uv sync --locked
       - name: Run tests
         run: uv run pytest -v
+      - name: Build and test wheel and source archives
+        run: |
+          uv build --no-sources
+          package_smoke=$(mktemp -d)
+          trap 'rm -rf "$package_smoke"' EXIT
+          for artifact in "$PWD"/dist/*.whl "$PWD"/dist/*.tar.gz; do
+            package_env="$package_smoke/$(basename "$artifact").venv"
+            uv venv --python .venv/bin/python "$package_env"
+            uv pip install --python "$package_env/bin/python" "$artifact"
+            (
+              cd "$package_smoke"
+              "$package_env/bin/python" -I - <<'PYTHON'
+          import importlib.metadata
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          import waygap
+
+          distribution = importlib.metadata.distribution("wayback-gap-detector")
+          assert distribution.version == waygap.__version__
+          assert waygap.USER_AGENT.startswith(f"Wayback-Gap-Detector/{distribution.version} ")
+          assert Path(waygap.__file__).is_relative_to(Path(sys.prefix))
+          assert "surt==0.3.1" in distribution.requires
+          assert importlib.metadata.version("surt") == "0.3.1"
+          assert distribution.metadata["License-Expression"] == "AGPL-3.0-or-later"
+          assert "GNU AFFERO GENERAL PUBLIC LICENSE" in distribution.read_text("licenses/LICENSE")
+          assert not any(file.name == "test_waygap.py" for file in distribution.files)
+          entry_points = [ep for ep in distribution.entry_points if ep.group == "console_scripts"]
+          assert [(ep.name, ep.value) for ep in entry_points] == [("waygap", "waygap:main")]
+          command = str(Path(sys.executable).with_name("waygap"))
+          version = subprocess.run([command, "--version"], capture_output=True, text=True, check=True, timeout=10)
+          assert version.stdout.strip() == f"waygap {distribution.version}"
+          help_result = subprocess.run([command, "--help"], capture_output=True, text=True, check=True, timeout=10)
+          assert '  waygap "https://example.com/blog/*"' in help_result.stdout
+          PYTHON
+            )
+          done
 
   lint:
     runs-on: ubuntu-latest

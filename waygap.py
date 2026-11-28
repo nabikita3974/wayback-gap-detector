@@ -1568,8 +1568,8 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 examples:
-  python waygap.py "https://example.com/blog/*"
-  python waygap.py "https://example.com/blog/*" --no-ignore-www --output result.txt
+  waygap "https://example.com/blog/*"
+  waygap "https://example.com/blog/*" --no-ignore-www --output result.txt
         """,
     )
 

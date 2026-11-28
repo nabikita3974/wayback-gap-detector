@@ -37,8 +37,8 @@ venv\Scripts\activate
 # macOS / Linux
 source venv/bin/activate
 
-# 3. Install dependencies
-pip install -r requirements.txt
+# 3. Install the tool and its dependencies
+python -m pip install .
 ```
 
 ---
@@ -46,8 +46,10 @@ pip install -r requirements.txt
 ## Usage
 
 ```
-python waygap.py TARGET_URL [OPTIONS]
+waygap TARGET_URL [OPTIONS]
 ```
+
+You can also run `python waygap.py ...` directly from the checkout.
 
 `TARGET_URL` is a wildcard URL passed to the CDX API (e.g. `https://example.com/blog/*`).
 
@@ -82,13 +84,13 @@ python waygap.py TARGET_URL [OPTIONS]
 Fetch all CDX records for `https://example.com/blog/*` and write URLs not found in the archive to `not_archived.txt`:
 
 ```bash
-python waygap.py "https://example.com/blog/*" --input urls.txt
+waygap "https://example.com/blog/*" --input urls.txt
 ```
 
 ### Custom cache and output files
 
 ```bash
-python waygap.py "https://example.com/blog/*" \
+waygap "https://example.com/blog/*" \
   --input urls.txt \
   --cache my_cache.db \
   --output missing.txt
@@ -128,7 +130,7 @@ logs the `resumeKey` value — add it to your original command (without
 `--refresh`) to continue:
 
 ```bash
-python waygap.py "https://example.com/blog/*" \
+waygap "https://example.com/blog/*" \
   --input urls.txt \
   --cache my_cache.db \
   --limit 50000 \
@@ -205,7 +207,7 @@ rebuilt automatically, without user action.
 ## Development
 
 This project uses [uv](https://docs.astral.sh/uv/). `uv sync` creates `.venv`
-and installs all dependencies (and Python itself, if needed).
+and installs the tool and all dependencies (and Python itself, if needed).
 
 ```bash
 uv sync
@@ -218,6 +220,10 @@ uv run basedpyright                     # type check
 CI runs the same checks. After changing dependencies with `uv add`, regenerate
 `requirements.txt` with
 `uv export --no-dev --no-hashes --no-emit-project -o requirements.txt`.
+The version is defined only in `waygap.py` as `__version__`; after changing it,
+refresh `uv.lock` with `uv lock`. Run `uv build` to build the wheel and source
+archive. CI installs each archive into a separate clean environment and checks
+its metadata and the installed `waygap --version` and `waygap --help` commands.
 For the internal design, see [ARCHITECTURE.md](ARCHITECTURE.md). To skip
 formatting commits in `git blame`, run
 `git config blame.ignoreRevsFile .git-blame-ignore-revs`.

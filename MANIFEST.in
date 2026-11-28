@@ -1,0 +1,1 @@
+include README_ja.md ARCHITECTURE.md AGENTS.md test_waygap.py requirements.txt uv.lock

@@ -14,6 +14,14 @@ There are two key modes:
 
 Page-count queries (`showNumPages`) send the same `pageSize` and `collapse` as page fetches.
 
+## Packaging
+
+The distribution installs the single `waygap.py` module and exposes `waygap:main`
+as the `waygap` console command. Setuptools reads the version from the literal
+`waygap.__version__`, so the CLI, User-Agent and distribution metadata share one
+version. The source archive also includes the tests, documentation and dependency
+files; building it does not require importing the runtime dependencies.
+
 ## Data flow
 
 ```mermaid

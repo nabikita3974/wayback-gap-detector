@@ -374,8 +374,7 @@ wheels = [
 
 [[package]]
 name = "wayback-gap-detector"
-version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "requests" },
     { name = "surt" },

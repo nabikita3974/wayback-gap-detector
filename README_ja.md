@@ -39,8 +39,8 @@ venv\Scripts\activate
 # macOS / Linux
 source venv/bin/activate
 
-# 3. 依存関係をインストール
-pip install -r requirements.txt
+# 3. ツールと依存関係をインストール
+python -m pip install .
 ```
 
 ---
@@ -48,8 +48,10 @@ pip install -r requirements.txt
 ## 使い方
 
 ```
-python waygap.py TARGET_URL [OPTIONS]
+waygap TARGET_URL [OPTIONS]
 ```
+
+チェックアウトしたディレクトリから `python waygap.py ...` で直接実行することもできます。
 
 `TARGET_URL` はCDX APIに渡すワイルドカードURLです（例: `https://example.com/blog/*`）。
 
@@ -84,13 +86,13 @@ python waygap.py TARGET_URL [OPTIONS]
 `https://example.com/blog/*` のCDXレコードをすべて取得し、アーカイブに存在しないURLを `not_archived.txt` に書き出します:
 
 ```bash
-python waygap.py "https://example.com/blog/*" --input urls.txt
+waygap "https://example.com/blog/*" --input urls.txt
 ```
 
 ### キャッシュと出力ファイルの指定
 
 ```bash
-python waygap.py "https://example.com/blog/*" \
+waygap "https://example.com/blog/*" \
   --input urls.txt \
   --cache my_cache.db \
   --output missing.txt
@@ -111,7 +113,7 @@ CDX APIがHTTP 429（Too Many Requests）を返した場合、ツールはすべ
 `--resume-key` が必要になるのは `resumeKey` フォールバック経路（サーバがpagination非対応の場合）のみです。フォールバック実行が途中で失敗すると、ツールは `resumeKey` の値をログに出力するので、元のコマンドに（`--refresh` を指定していた場合は外して）追加して続行します:
 
 ```bash
-python waygap.py "https://example.com/blog/*" \
+waygap "https://example.com/blog/*" \
   --input urls.txt \
   --cache my_cache.db \
   --limit 50000 \
@@ -162,7 +164,7 @@ CDX応答と手元URLリストの**両辺**を、同一のフラグ設定で [su
 
 ## 開発
 
-開発には [uv](https://docs.astral.sh/uv/) を使用します。`uv sync` で仮想環境（`.venv`）の作成と依存関係のインストールが完了します（必要なPythonも自動で用意されます）。
+開発には [uv](https://docs.astral.sh/uv/) を使用します。`uv sync` で仮想環境（`.venv`）の作成とツールおよび依存関係のインストールが完了します（必要なPythonも自動で用意されます）。
 
 ```bash
 uv sync
@@ -174,6 +176,10 @@ uv run basedpyright                     # 型チェック
 
 CIでも同じチェックを実行します。`uv add` で依存関係を変更したら、`requirements.txt` を
 `uv export --no-dev --no-hashes --no-emit-project -o requirements.txt` で再生成してください。
+バージョンは `waygap.py` の `__version__` のみで定義します。変更後は `uv lock` で
+`uv.lock` を更新してください。`uv build` でwheelとソースアーカイブを作成できます。
+CIはそれぞれを別のクリーンな環境にインストールし、メタデータとインストール済みの
+`waygap --version`・`waygap --help` を検証します。
 内部設計は [ARCHITECTURE.md](ARCHITECTURE.md) を参照してください。`git blame` からフォーマットコミットを除外するには
 `git config blame.ignoreRevsFile .git-blame-ignore-revs` を実行します。
 
