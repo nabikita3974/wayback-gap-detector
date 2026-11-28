@@ -416,12 +416,10 @@ class TestCdxParams(unittest.TestCase):
             self.assertEqual(params["collapse"], "original")
             self.assertEqual(params["pageSize"], 3)
 
-    def test_get_num_pages_none_on_request_error(self):
+    def test_get_num_pages_none_on_http_400(self):
         with patch("requests.Session") as mock_session_cls:
             mock_session = mock_session_cls.return_value
-            r = MagicMock()
-            r.raise_for_status.side_effect = requests.exceptions.HTTPError("400")
-            mock_session.get.return_value = r
+            mock_session.get.return_value = _status_response(400)
             self.assertIsNone(
                 get_num_pages(
                     "http://example.com/*", None, CDX_COLLAPSE, mock_session, {}
@@ -1441,16 +1439,16 @@ class TestCdx5xxRetry(unittest.TestCase):
 
     @patch("waygap.time.sleep")
     @patch("requests.Session")
-    def test_get_num_pages_persistent_5xx_falls_back(
-        self, mock_session_cls, mock_sleep
-    ):
+    def test_get_num_pages_persistent_5xx_raises(self, mock_session_cls, mock_sleep):
         mock_session = mock_session_cls.return_value
         mock_session.get.side_effect = [_status_response(503)] * 3 + [_json_response(5)]
 
-        with patch("waygap._CDX_LIMITER"):
-            n = get_num_pages(TARGET, None, CDX_COLLAPSE, mock_session, {})
+        with patch("waygap._CDX_LIMITER"), self.assertRaises(CDXAPIError) as cm:
+            get_num_pages(TARGET, None, CDX_COLLAPSE, mock_session, {})
 
-        self.assertIsNone(n)
+        self.assertIn(
+            "showNumPages request failed (max retries reached)", str(cm.exception)
+        )
         self.assertEqual(mock_session.get.call_count, 3)
         self.assertEqual(self._sleeps(mock_sleep), [10.0, 20.0])
 
@@ -1460,12 +1458,25 @@ class TestCdx5xxRetry(unittest.TestCase):
         mock_session = mock_session_cls.return_value
         mock_session.get.side_effect = [_status_response(400), _json_response(5)]
 
-        with patch("waygap._CDX_LIMITER"):
+        with (
+            patch("waygap._CDX_LIMITER"),
+            self.assertLogs("waygap", level="INFO") as logs,
+        ):
             n = get_num_pages(TARGET, None, CDX_COLLAPSE, mock_session, {})
 
         self.assertIsNone(n)
         self.assertEqual(mock_session.get.call_count, 1)
         mock_sleep.assert_not_called()
+        self.assertEqual(
+            [(r.levelname, r.getMessage()) for r in logs.records],
+            [
+                (
+                    "INFO",
+                    "showNumPages returned HTTP 400 (pagination unsupported), "
+                    "falling back to resumeKey mode",
+                )
+            ],
+        )
 
     @patch("waygap.time.sleep")
     @patch("requests.Session")
@@ -1509,7 +1520,7 @@ class TestCdx5xxRetry(unittest.TestCase):
 
     @patch("waygap.time.sleep")
     @patch("requests.Session")
-    def test_get_num_pages_last_5xx_retry_after_pauses_before_fallback(
+    def test_get_num_pages_last_5xx_retry_after_raises_without_pause(
         self, mock_session_cls, mock_sleep
     ):
         mock_session = mock_session_cls.return_value
@@ -1522,15 +1533,15 @@ class TestCdx5xxRetry(unittest.TestCase):
         with (
             patch("waygap._CDX_LIMITER") as mock_limiter,
             self.assertLogs("waygap", level="WARNING") as logs,
+            self.assertRaises(CDXAPIError),
         ):
-            n = get_num_pages(TARGET, None, CDX_COLLAPSE, mock_session, {})
+            get_num_pages(TARGET, None, CDX_COLLAPSE, mock_session, {})
 
-        self.assertIsNone(n)
         self.assertEqual(mock_session.get.call_count, 3)
-        self.assertEqual(self._pauses(mock_limiter), [120.0])
+        mock_limiter.pause.assert_not_called()
         self.assertEqual(self._sleeps(mock_sleep), [10.0, 20.0])
-        self.assertTrue(
-            any("pausing all CDX requests for 120 s" in line for line in logs.output)
+        self.assertFalse(
+            any("pausing all CDX requests" in line for line in logs.output)
         )
 
     @patch("waygap.time.sleep")
@@ -1576,6 +1587,120 @@ class TestCdx5xxRetry(unittest.TestCase):
         self.assertEqual(cm.exception.resume_key, "KEY1")
         self.assertIn("241", str(cm.exception))
         self.assertEqual(mock_session.get.call_count, 2)
+
+
+def _html_response():
+    """A 200 response whose body is not a page count."""
+    m = MagicMock()
+    m.status_code = 200
+    m.headers = {"Content-Type": "text/html"}
+    m.content = b"<html>"
+    m.text = "<html>"
+    m.json.side_effect = ValueError("not JSON")
+    m.raise_for_status.return_value = None
+    return m
+
+
+class TestShowNumPagesErrors(unittest.TestCase):
+    """Tests that only HTTP 400 makes the page count request give up at once."""
+
+    @staticmethod
+    def _sleeps(mock_sleep) -> list:
+        return [c.args[0] for c in mock_sleep.call_args_list]
+
+    def _assert_retried_then_raised(self, responses, mock_session_cls, mock_sleep):
+        mock_session = mock_session_cls.return_value
+        mock_session.get.side_effect = responses
+
+        with (
+            patch("waygap._CDX_LIMITER"),
+            self.assertLogs("waygap", level="WARNING") as logs,
+            self.assertRaises(CDXAPIError) as cm,
+        ):
+            get_num_pages(TARGET, None, CDX_COLLAPSE, mock_session, {})
+
+        self.assertIn(
+            "showNumPages request failed (max retries reached)", str(cm.exception)
+        )
+        self.assertEqual(mock_session.get.call_count, 3)
+        self.assertEqual(self._sleeps(mock_sleep), [1, 2])
+        warnings = [
+            r.getMessage()
+            for r in logs.records
+            if r.getMessage().startswith("showNumPages request error (attempt ")
+        ]
+        self.assertEqual(
+            [w.split(")")[0] for w in warnings],
+            [f"showNumPages request error (attempt {n}/3" for n in (1, 2, 3)],
+        )
+        return warnings
+
+    @patch("waygap.time.sleep")
+    @patch("requests.Session")
+    def test_get_num_pages_404_retries_then_raises(self, mock_session_cls, mock_sleep):
+        self._assert_retried_then_raised(
+            [_status_response(404)] * 3 + [_json_response(5)],
+            mock_session_cls,
+            mock_sleep,
+        )
+
+    @patch("waygap.time.sleep")
+    @patch("requests.Session")
+    def test_get_num_pages_connection_error_retries_then_raises(
+        self, mock_session_cls, mock_sleep
+    ):
+        self._assert_retried_then_raised(
+            [requests.exceptions.ConnectionError("reset")] * 3 + [_json_response(5)],
+            mock_session_cls,
+            mock_sleep,
+        )
+
+    @patch("waygap.time.sleep")
+    @patch("requests.Session")
+    def test_get_num_pages_404_then_returns_count(self, mock_session_cls, mock_sleep):
+        mock_session = mock_session_cls.return_value
+        mock_session.get.side_effect = [_status_response(404), _json_response(5)]
+
+        with patch("waygap._CDX_LIMITER"):
+            n = get_num_pages(TARGET, None, CDX_COLLAPSE, mock_session, {})
+
+        self.assertEqual(n, 5)
+        self.assertEqual(mock_session.get.call_count, 2)
+        self.assertEqual(self._sleeps(mock_sleep), [1])
+
+    @patch("waygap.time.sleep")
+    @patch("requests.Session")
+    def test_get_num_pages_404_then_400_falls_back(self, mock_session_cls, mock_sleep):
+        mock_session = mock_session_cls.return_value
+        mock_session.get.side_effect = [
+            _status_response(404),
+            _status_response(400),
+            _json_response(5),
+        ]
+
+        with patch("waygap._CDX_LIMITER"):
+            n = get_num_pages(TARGET, None, CDX_COLLAPSE, mock_session, {})
+
+        self.assertIsNone(n)
+        self.assertEqual(mock_session.get.call_count, 2)
+        self.assertEqual(self._sleeps(mock_sleep), [1])
+
+    @patch("waygap.time.sleep")
+    @patch("requests.Session")
+    def test_get_num_pages_non_numeric_retries_then_raises(
+        self, mock_session_cls, mock_sleep
+    ):
+        warnings = self._assert_retried_then_raised(
+            [_html_response() for _ in range(3)] + [_json_response(5)],
+            mock_session_cls,
+            mock_sleep,
+        )
+
+        self.assertEqual(
+            warnings[0],
+            "showNumPages request error (attempt 1/3): non-numeric response: "
+            "status=200, Content-Type=text/html, content-length=6",
+        )
 
 
 class TestFetchPageRowsChaining(unittest.TestCase):
@@ -2844,6 +2969,155 @@ class TestCDXPaginationDB(unittest.TestCase):
         self.assertIn("429", str(cm.exception))
         self.assertEqual(mock_session.get.call_count, 4)
         self.assertNotEqual(meta.get("mode"), "resumekey")
+        self.assertEqual(meta.get("completed"), "0")
+
+    @staticmethod
+    def _read_cache(cache_path):
+        conn = sqlite3.connect(cache_path)
+        try:
+            meta = read_meta(conn)
+            keys = {r[0] for r in conn.execute("SELECT key FROM archived;")}
+            done = {r[0] for r in conn.execute("SELECT page FROM pages_done;")}
+        finally:
+            conn.close()
+        return meta, keys, done
+
+    @patch("waygap.time.sleep")
+    @patch("requests.Session")
+    def test_num_pages_persistent_404_exits_1_before_resumekey(
+        self, mock_session_cls, mock_sleep
+    ):
+        sent = []
+
+        def _route(url, params=None, headers=None, timeout=None):
+            params = dict(params or {})
+            sent.append(params)
+            if "showNumPages" in params:
+                return _status_response(404)
+            # Recorded and checked below: an AssertionError raised here
+            # would make main() return 1 for the wrong reason.
+            return _json_response([["original"]])
+
+        mock_session_cls.return_value.get.side_effect = _route
+        with tempfile.TemporaryDirectory() as tmp:
+            input_file = Path(tmp) / "urls.txt"
+            input_file.write_text("https://example.com/\n", encoding="utf-8")
+            cache_path = os.path.join(tmp, "cache.db")
+            argv = ["waygap.py", TARGET, "--input", str(input_file)]
+            argv += ["--cache", cache_path]
+            with (
+                patch("sys.argv", argv),
+                self.assertLogs("waygap", level="INFO") as logs,
+            ):
+                self.assertEqual(main(), 1)
+
+            meta, _, _ = self._read_cache(cache_path)
+
+        errors = [r.getMessage() for r in logs.records if r.levelname == "ERROR"]
+        self.assertTrue(
+            any(
+                "showNumPages request failed (max retries reached)" in e for e in errors
+            )
+        )
+        self.assertFalse(any("Unexpected error" in e for e in errors))
+        self.assertEqual(len(sent), 3)
+        self.assertTrue(all("showNumPages" in p for p in sent))
+        self.assertEqual([c.args[0] for c in mock_sleep.call_args_list], [1, 2])
+        self.assertNotIn("mode", meta)
+        self.assertEqual(meta.get("completed"), "0")
+
+    @patch("requests.Session")
+    def test_num_pages_zero_falls_back_to_resumekey(self, mock_session_cls):
+        def _route(url, params=None, headers=None, timeout=None):
+            params = params or {}
+            if "showNumPages" in params:
+                return _json_response(0)
+            if "page" not in params and params.get("resumeKey") is None:
+                return _json_response([["original"], ["http://a.example/"]])
+            raise AssertionError(f"unexpected params: {params}")
+
+        mock_session_cls.return_value.get.side_effect = _route
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = os.path.join(tmp, "cache.db")
+            ensure_archived_db(TARGET, cache_path, workers=1)
+            meta, keys, _ = self._read_cache(cache_path)
+
+        self.assertEqual(meta.get("mode"), "resumekey")
+        self.assertEqual(meta.get("completed"), "1")
+        self.assertEqual(keys, {normalize_key("http://a.example/")})
+
+    def _assert_page_400_stops(self, num_pages, mock_session_cls, mock_pause):
+        """Page `num_pages - 1` keeps returning 400; earlier pages succeed."""
+        failing = num_pages - 1
+        requested_pages = []
+        resumekey_requests = []
+
+        def _route(url, params=None, headers=None, timeout=None):
+            params = params or {}
+            if "showNumPages" in params:
+                return _json_response(num_pages)
+            if "page" not in params:
+                resumekey_requests.append(dict(params))
+                return _json_response([["original"]])
+            page = params["page"]
+            requested_pages.append(page)
+            if page == failing:
+                return _status_response(400)
+            return _json_response([["original"], [f"http://p{page}.example/"]])
+
+        mock_session_cls.return_value.get.side_effect = _route
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = os.path.join(tmp, "cache.db")
+            with _join_new_threads(), self.assertRaises(CDXAPIError):
+                ensure_archived_db(TARGET, cache_path, workers=1)
+            meta, keys, done = self._read_cache(cache_path)
+
+        self.assertEqual(requested_pages.count(failing), 3)
+        self.assertEqual([c.args[0] for c in mock_pause.call_args_list], [1, 2])
+        self.assertEqual(resumekey_requests, [])
+        self.assertEqual(meta.get("mode"), "pagination")
+        self.assertEqual(meta.get("completed"), "0")
+        return keys, done
+
+    @patch("waygap._pause")
+    @patch("requests.Session")
+    def test_page_400_on_only_page_stops_with_error(self, mock_session_cls, mock_pause):
+        keys, done = self._assert_page_400_stops(1, mock_session_cls, mock_pause)
+
+        self.assertEqual(keys, set())
+        self.assertEqual(done, set())
+
+    @patch("waygap._pause")
+    @patch("requests.Session")
+    def test_page_400_after_stored_page_stops_with_error(
+        self, mock_session_cls, mock_pause
+    ):
+        keys, done = self._assert_page_400_stops(2, mock_session_cls, mock_pause)
+
+        self.assertEqual(keys, {normalize_key("http://p0.example/")})
+        self.assertEqual(done, {0})
+
+    @patch("waygap.time.sleep")
+    @patch("requests.Session")
+    def test_resumekey_400_stops_with_error(self, mock_session_cls, _sleep):
+        resumekey_requests = []
+
+        def _route(url, params=None, headers=None, timeout=None):
+            params = params or {}
+            if "showNumPages" in params:
+                return _no_pagination_response()
+            resumekey_requests.append(dict(params))
+            return _status_response(400)
+
+        mock_session_cls.return_value.get.side_effect = _route
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = os.path.join(tmp, "cache.db")
+            with self.assertRaises(CDXAPIError):
+                ensure_archived_db(TARGET, cache_path, workers=1)
+            meta, _, _ = self._read_cache(cache_path)
+
+        self.assertEqual(len(resumekey_requests), 3)
+        self.assertEqual(meta.get("mode"), "resumekey")
         self.assertEqual(meta.get("completed"), "0")
 
     @patch("requests.Session")
